@@ -10,7 +10,7 @@ import pandas as pd
 @st.cache_resource
 def load_model():
     # Use the correct path to your saved model file
-    model = tf.keras.models.load_model('dengue_risk_level_classification_model.h5')
+    model = tf.keras.models.load_model('Model/dengue_risk_level_classification_model.h5')
     return model
 
 model = load_model()
