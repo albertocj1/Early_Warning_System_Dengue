@@ -1,3 +1,4 @@
+
 import streamlit as st
 import tensorflow as tf
 import numpy as np
@@ -55,17 +56,19 @@ st.warning("Note: Scaling has been removed from the prediction pipeline. If the 
 
 # Create input fields for each feature
 input_data = {}
+
+# Handle city as a selectbox outside the loop
+city_options = [col.replace('CITY_', '') for col in feature_columns if col.startswith('CITY_')]
+selected_city = st.selectbox("Select City", city_options)
+# One-hot encode the selected city
+for city_col in [col for col in feature_columns if col.startswith('CITY_')]:
+    input_data[city_col] = 1 if city_col == f'CITY_{selected_city}' else 0
+
+# Create input fields for other features
 for feature in feature_columns:
-    # You might want to customize the input type based on the feature (e.g., number_input, text_input)
-    # For simplicity, using number_input for all numerical features
-    if feature.startswith('CITY_'):
-        # Handle city as a selectbox
-        city_options = [col.replace('CITY_', '') for col in feature_columns if col.startswith('CITY_')]
-        selected_city = st.selectbox("Select City", city_options)
-        # One-hot encode the selected city
-        for city_col in [col for col in feature_columns if col.startswith('CITY_')]:
-            input_data[city_col] = 1 if city_col == f'CITY_{selected_city}' else 0
-    else:
+    if not feature.startswith('CITY_'):
+        # You might want to customize the input type based on the feature (e.g., number_input, text_input)
+        # For simplicity, using number_input for all numerical features
         input_data[feature] = st.number_input(f"Enter {feature}", value=0.0)
 
 if st.button("Predict Risk Level"):
