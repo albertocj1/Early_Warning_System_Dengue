@@ -3,7 +3,7 @@ import tensorflow as tf
 import numpy as np
 import pandas as pd
 import pickle
-from sklearn.preprocessing import StandardScaler
+# from sklearn.preprocessing import StandardScaler # Removed scaler import
 
 # Load the trained model
 # Ensure the path matches where you saved the model
@@ -12,12 +12,12 @@ model = tf.keras.models.load_model('Model/dengue_classification_model.keras')
 # Load the scaler used during training
 # Assuming you saved the scaler as 'scaler_classification.pkl' during data preprocessing
 # If you didn't save it, you'll need to regenerate and save it or incorporate scaling differently
-try:
-    with open('scaler_classification.pkl', 'rb') as f:
-        scaler = pickle.load(f)
-except FileNotFoundError:
-    st.error("Scaler file not found. Please ensure 'scaler_classification.pkl' is available.")
-    st.stop() # Stop the app if the scaler is not found
+# try:
+#     with open('scaler_classification.pkl', 'rb') as f:
+#         scaler = pickle.load(f)
+# except FileNotFoundError:
+#     st.error("Scaler file not found. Please ensure 'scaler_classification.pkl' is available.")
+#     st.stop() # Stop the app if the scaler is not found
 
 # Define the expected feature columns (in the same order as during training)
 # This list should match the columns in your X_classification DataFrame after preprocessing
@@ -50,6 +50,8 @@ target_names = ['RISK_LEVEL_Low', 'RISK_LEVEL_Moderate', 'RISK_LEVEL_High', 'RIS
 st.title("Dengue Risk Level Prediction")
 
 st.write("Enter the feature values below to predict the dengue risk level.")
+st.warning("Note: Scaling has been removed from the prediction pipeline. If the model was trained on scaled data, predictions may be inaccurate.")
+
 
 # Create input fields for each feature
 input_data = {}
@@ -75,15 +77,17 @@ if st.button("Predict Risk Level"):
 
     # Preprocess the input data (scaling)
     # Make sure the scaler is fitted on the training data before saving
-    try:
-        input_scaled = scaler.transform(input_df)
-    except Exception as e:
-        st.error(f"Error during scaling: {e}")
-        st.stop()
+    # try:
+    #     input_scaled = scaler.transform(input_df)
+    # except Exception as e:
+    #     st.error(f"Error during scaling: {e}")
+    #     st.stop()
 
 
     # Reshape the input for the model (samples, timesteps, features)
-    input_reshaped = input_scaled.reshape((input_scaled.shape[0], 1, input_scaled.shape[1]))
+    # Use the unscaled input_df directly
+    input_reshaped = input_df.values.reshape((input_df.shape[0], 1, input_df.shape[1]))
+
 
     # Make prediction
     prediction = model.predict(input_reshaped)
