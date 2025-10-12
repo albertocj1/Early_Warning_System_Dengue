@@ -1,4 +1,3 @@
-%%writefile app.py
 import streamlit as st
 import tensorflow as tf
 import numpy as np
@@ -8,7 +7,7 @@ from sklearn.preprocessing import StandardScaler
 
 # Load the trained model
 # Ensure the path matches where you saved the model
-model = tf.keras.models.load_model('/content/dengue_classification_model.keras')
+model = tf.keras.models.load_model('Model/dengue_classification_model.keras')
 
 # Load the scaler used during training
 # Assuming you saved the scaler as 'scaler_classification.pkl' during data preprocessing
