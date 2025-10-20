@@ -1,126 +1,127 @@
-import pandas as pd
-import numpy as np
-import tensorflow as tf
 import streamlit as st
-import joblib
+import pandas as pd
 import requests
-import datetime
-import warnings
-from sklearn.exceptions import InconsistentVersionWarning
+from datetime import datetime
 
-# --- Suppress sklearn version mismatch warnings ---
-warnings.filterwarnings("ignore", category=InconsistentVersionWarning)
+# ================================================================
+# APP TITLE
+# ================================================================
+st.set_page_config(page_title="Weekly Early Warning System for Dengue", layout="wide")
+st.title("🦟 Weekly Early Warning System for Dengue (Metro Manila)")
+st.caption("Automated integration of static and weekly weather data using WeatherAPI.com")
 
-# --- Your WeatherAPI key (directly used) ---
-API_KEY = "9c8585dd43864b27a66224931251910"
+# ================================================================
+# STATIC DATA
+# ================================================================
+land_area_data = {
+    "CITY": ["MANILA CITY", "QUEZON CITY", "CALOOCAN CITY", "LAS PINAS CITY", "MAKATI CITY",
+             "MALABON CITY", "MANDALUYONG CITY", "MARIKINA CITY", "MUNTINLUPA CITY",
+             "NAVOTAS CITY", "PARANAQUE CITY", "PASAY CITY", "PASIG CITY", "PATEROS",
+             "SAN JUAN CITY", "TAGUIG CITY", "VALENZUELA CITY"],
+    "LAND AREA": [24.98, 171.71, 55.8, 32.69, 21.57, 15.71, 9.29, 21.52, 39.75, 8.94,
+                  46.57, 55.8, 48.46, 10.4, 5.95, 45.21, 47.02]
+}
 
-# --- Model paths ---
-MODEL_PATH = "Model/dengue_classification_model.keras"
-SCALER_PATH = "Model/scaler_classification.pkl"
+pop_data = {
+    "CITY": ["MANILA CITY", "QUEZON CITY", "CALOOCAN CITY", "LAS PINAS CITY", "MAKATI CITY",
+             "MALABON CITY", "MANDALUYONG CITY", "MARIKINA CITY", "MUNTINLUPA CITY",
+             "NAVOTAS CITY", "PARANAQUE CITY", "PASAY CITY", "PASIG CITY", "PATEROS",
+             "SAN JUAN CITY", "TAGUIG CITY", "VALENZUELA CITY"],
+    "POP_2015": [1780148, 2936116, 1583978, 588894, 582602, 365525, 386276, 450741, 504509,
+                 249463, 665822, 416522, 755300, 63840, 122180, 804915, 620422],
+    "POP_2020": [1846513, 2960048, 1661584, 606293, 629616, 380522, 425758, 456059, 543445,
+                 247543, 689992, 440656, 803159, 65227, 126347, 886722, 714978]
+}
 
-# --- Load model and scaler ---
-try:
-    model_classification = tf.keras.models.load_model(MODEL_PATH)
-    scaler_classification = joblib.load(SCALER_PATH)
-except Exception as e:
-    st.error(f"⚠️ Error loading model or scaler: {e}")
-    st.stop()
+df_land = pd.DataFrame(land_area_data)
+df_pop = pd.DataFrame(pop_data)
+df_static = pd.merge(df_land, df_pop, on="CITY")
 
-# --- Feature columns expected by the model ---
-FEATURE_COLUMNS = [
-    'RAINFALL', 'TMAX', 'TMIN', 'TMEAN', 'RH', 'SUNSHINE', 'POPULATION',
-    'LAND AREA', 'POP_DENSITY', 'RAINFALL_lag1', 'RAINFALL_lag2',
-    'RAINFALL_lag3', 'RAINFALL_lag4', 'TMAX_lag1', 'TMAX_lag2', 'TMAX_lag3',
-    'TMAX_lag4', 'TMIN_lag1', 'TMIN_lag2', 'TMIN_lag3', 'TMIN_lag4',
-    'TMEAN_lag1', 'TMEAN_lag2', 'TMEAN_lag3', 'TMEAN_lag4', 'RH_lag1',
-    'RH_lag2', 'RH_lag3', 'RH_lag4', 'SUNSHINE_lag1', 'SUNSHINE_lag2',
-    'SUNSHINE_lag3', 'SUNSHINE_lag4', 'RAINFALL_roll2_mean',
-    'RAINFALL_roll4_mean', 'RAINFALL_roll2_sum', 'RAINFALL_roll4_sum',
-    'TMEAN_roll2_mean', 'TMEAN_roll4_mean', 'TMEAN_roll2_sum',
-    'TMEAN_roll4_sum', 'RH_roll2_mean', 'RH_roll4_mean', 'RH_roll2_sum',
-    'RH_roll4_sum', 'INCIDENCE_per_100k', 'YEAR_WEEK_numerical'
-]
+# ================================================================
+# WEATHER API CONFIG
+# ================================================================
+st.header("🌦️ Weather Data Fetching")
+API_KEY = "9c8585dd43864b27a66224931251910"  # WeatherAPI.com key
+base_url = "https://api.weatherapi.com/v1/forecast.json"
 
-# --- Fetch Weather Data from WeatherAPI ---
-def fetch_weather_data(location: str):
-    """Fetch 7-day weather forecast data from WeatherAPI."""
-    url = f"http://api.weatherapi.com/v1/forecast.json?key={API_KEY}&q={location}&days=7"
-    response = requests.get(url)
-    if response.status_code != 200:
-        st.error(f"❌ Failed to fetch weather data: {response.text}")
+def get_weekly_weather(city):
+    """Fetch 7-day weather data from WeatherAPI.com and compute weekly averages."""
+    try:
+        params = {
+            "key": API_KEY,
+            "q": city + ", Philippines",
+            "days": 7,
+            "aqi": "no",
+            "alerts": "no"
+        }
+        response = requests.get(base_url, params=params)
+        data = response.json()
+
+        if "error" in data:
+            st.warning(f"⚠️ {city}: {data['error']['message']}")
+            return None
+
+        forecast = data.get("forecast", {}).get("forecastday", [])
+        if not forecast:
+            return None
+
+        df = pd.DataFrame([{
+            "DATE": f["date"],
+            "RAINFALL": f["day"]["totalprecip_mm"],
+            "TMAX": f["day"]["maxtemp_c"],
+            "TMIN": f["day"]["mintemp_c"],
+            "TMEAN": f["day"]["avgtemp_c"],
+            "RH": f["day"]["avghumidity"],
+            "SUNSHINE": f["day"]["daily_chance_of_sunshine"]
+        } for f in forecast])
+
+        # Compute weekly averages
+        summary = df.mean(numeric_only=True).to_dict()
+        summary["CITY"] = city
+        summary["YR-WEEK"] = datetime.now().strftime("%Y-W%U")
+        return summary
+    except Exception as e:
+        st.error(f"Error fetching {city}: {e}")
         return None
-    return response.json()
 
-# --- Process weather data into model-ready format ---
-def process_weather_data(weather_data):
-    forecast_days = weather_data['forecast']['forecastday']
-    rainfall = [day['day']['totalprecip_mm'] for day in forecast_days]
-    tmax = [day['day']['maxtemp_c'] for day in forecast_days]
-    tmin = [day['day']['mintemp_c'] for day in forecast_days]
-    tmean = [(hi + lo) / 2 for hi, lo in zip(tmax, tmin)]
-    rh = [day['day']['avghumidity'] for day in forecast_days]
-    sunshine = [day['day']['daily_chance_of_sunshine'] for day in forecast_days]
+# ================================================================
+# MAIN ACTION
+# ================================================================
+if st.button("🔄 Fetch Weekly Weather Data"):
+    st.info("Fetching 7-day forecast data for Metro Manila cities. Please wait...")
+    weather_data = [get_weekly_weather(city) for city in df_static["CITY"]]
+    weather_df = pd.DataFrame([d for d in weather_data if d])
 
-    week_data = {
-        'RAINFALL': np.mean(rainfall),
-        'TMAX': np.mean(tmax),
-        'TMIN': np.mean(tmin),
-        'TMEAN': np.mean(tmean),
-        'RH': np.mean(rh),
-        'SUNSHINE': np.mean(sunshine),
-        'YEAR_WEEK_numerical': int(datetime.date.today().strftime("%Y%W")),
-        # Static socio-demographic placeholders (can be updated for your city)
-        'POPULATION': 150000,
-        'LAND AREA': 100,
-        'POP_DENSITY': 1500,
-        'INCIDENCE_per_100k': 0
-    }
+    if not weather_df.empty:
+        # Merge with static data
+        merged_df = pd.merge(df_static, weather_df, on="CITY")
+        merged_df["POP_DENSITY"] = merged_df["POP_2020"] / merged_df["LAND AREA"]
 
-    # Fill lag and rolling features with 0 (for live weekly prediction)
-    for col in FEATURE_COLUMNS:
-        if col not in week_data:
-            week_data[col] = 0
+        st.success("✅ Weekly weather data fetched and merged successfully!")
+        st.subheader("📊 Combined Data (Static + Weather Features)")
+        st.dataframe(merged_df, use_container_width=True)
 
-    df = pd.DataFrame([week_data])
-    df = df[FEATURE_COLUMNS]
-    df[FEATURE_COLUMNS] = scaler_classification.transform(df[FEATURE_COLUMNS])
-    reshaped = df.values.reshape((df.shape[0], 1, df.shape[1]))
-    return reshaped, week_data
+        # Save and allow download
+        csv = merged_df.to_csv(index=False)
+        st.download_button(
+            label="⬇️ Download Weekly Data (CSV)",
+            data=csv,
+            file_name="weekly_dengue_input.csv",
+            mime="text/csv"
+        )
 
-# --- Streamlit UI ---
-st.set_page_config(page_title="Dengue Early Warning System", page_icon="🦠")
-st.title("🦠 Weekly Dengue Early Warning System")
-st.markdown("Predict dengue risk based on **real-time 7-day weather forecasts** using WeatherAPI and deep learning.")
+        st.caption("Tip: This CSV can be directly used for your dengue prediction model input.")
+    else:
+        st.warning("No weather data fetched. Check API key or network connection.")
 
-# --- User input ---
-location = st.text_input("📍 Enter City or Province (e.g., Manila, Cebu, Davao):", "Manila")
-
-if st.button("🔍 Generate Weekly Prediction"):
-    with st.spinner("Fetching weather data and predicting dengue risk..."):
-        weather_data = fetch_weather_data(location)
-        if weather_data:
-            processed_input, week_summary = process_weather_data(weather_data)
-            prediction = model_classification.predict(processed_input)
-            predicted_labels = (prediction > 0.5).astype(int)
-            risk_labels = ['Low', 'Moderate', 'High', 'Very High']
-            predicted_risk_levels = [risk_labels[i] for i, label in enumerate(predicted_labels[0]) if label == 1]
-
-            # --- Display results ---
-            st.subheader("🌦 Weekly Weather Summary")
-            st.dataframe(pd.DataFrame([week_summary]))
-
-            st.subheader("📊 Predicted Dengue Risk Level")
-            if predicted_risk_levels:
-                for r in predicted_risk_levels:
-                    if r == "Low":
-                        st.success(f"🟢 **Risk Level:** {r}")
-                    elif r == "Moderate":
-                        st.info(f"🟡 **Risk Level:** {r}")
-                    elif r == "High":
-                        st.warning(f"🟠 **Risk Level:** {r}")
-                    else:
-                        st.error(f"🔴 **Risk Level:** {r}")
-            else:
-                st.warning("No risk level detected (model output below threshold).")
-
-            st.caption("⚙️ Powered by WeatherAPI and Deep Learning (CNN-LSTM).")
+# ================================================================
+# FOOTER
+# ================================================================
+st.markdown("""
+---
+**Developed by:** Christian Joshua Q. Alberto  
+**Data Sources:**  
+- [WeatherAPI.com](https://www.weatherapi.com/) for weather data  
+- Philippine Statistics Authority (PSA) for population and land area data  
+---
+""")
