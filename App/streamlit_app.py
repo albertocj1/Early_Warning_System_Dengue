@@ -1,3 +1,4 @@
+# streamlit_ews.py
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -86,35 +87,38 @@ def fetch_weather_forecast(city: str, days: int = 7):
         })
     return pd.DataFrame(records)
 
-
 # -------------------------------------
-# 📈 FEATURE ENGINEERING
+# 📈 FEATURE ENGINEERING (FIXED)
 # -------------------------------------
-def add_lag_and_rolling(df, cols):
+def add_lag_and_rolling(df):
     df = df.sort_values("DATE").reset_index(drop=True)
-    for col in cols:
+    numeric_cols = ["RAINFALL", "TMAX", "TMIN", "TMEAN", "RH", "SUNSHINE"]
+
+    # LAG FEATURES (1-4)
+    for col in numeric_cols:
         for lag in range(1, 5):
             df[f"{col}_lag{lag}"] = df[col].shift(lag)
-        df[f"{col}_roll3"] = df[col].rolling(3).mean()
-        df[f"{col}_roll5"] = df[col].rolling(5).mean()
+
+    # ROLLING FEATURES (2 and 4)
+    for col in ["RAINFALL", "TMEAN", "RH"]:
+        df[f"{col}_roll2_mean"] = df[col].rolling(2).mean()
+        df[f"{col}_roll4_mean"] = df[col].rolling(4).mean()
+        df[f"{col}_roll2_sum"] = df[col].rolling(2).sum()
+        df[f"{col}_roll4_sum"] = df[col].rolling(4).sum()
+
     return df.dropna().reset_index(drop=True)
 
-
+# -------------------------------------
+# 🧮 POPULATION PROJECTION
+# -------------------------------------
 def project_population(city, target_year=2025):
     info = CITY_DATA[city]
     p2015, p2020 = info["pop_2015"], info["pop_2020"]
-    growth_rate = (p2020 - p2015) / 5
-    return int(p2020 + growth_rate * (target_year - 2020))
-
-
-def yr_week_from_date(date_str):
-    dt = pd.to_datetime(date_str)
-    iso = dt.isocalendar()
-    return iso.year * 100 + iso.week
-
+    growth_rate = (p2020 / p2015) ** (1 / 5) - 1
+    return int(p2020 * ((1 + growth_rate) ** (target_year - 2020)))
 
 # -------------------------------------
-# 🧩 PREDICTION PIPELINE
+# 🧩 PREDICTION DATA PIPELINE
 # -------------------------------------
 def prepare_data(df, city):
     pop = project_population(city)
@@ -124,25 +128,49 @@ def prepare_data(df, city):
     df["LAND AREA"] = area
     df["POPULATION"] = pop
     df["POP_DENSITY"] = pop / area
-    df["YR_WEEK"] = df["DATE"].apply(yr_week_from_date)
 
-    # Add lag + rolling features
-    df = add_lag_and_rolling(df, ["RAINFALL", "TMEAN", "RH", "SUNSHINE"])
+    # Compute year-week numeric
+    df["YEAR_WEEK_numerical"] = df["DATE"].apply(
+        lambda x: int(pd.to_datetime(x).isocalendar().year * 100 + pd.to_datetime(x).isocalendar().week)
+    )
+
+    # Add placeholder for incidence
+    df["INCIDENCE_per_100k"] = 0.0
+
+    # Add lag and rolling features
+    df = add_lag_and_rolling(df)
+
+    # Match model feature order
+    feature_order = [
+        'RAINFALL', 'TMAX', 'TMIN', 'TMEAN', 'RH', 'SUNSHINE',
+        'POPULATION', 'LAND AREA', 'POP_DENSITY',
+        'RAINFALL_lag1', 'RAINFALL_lag2', 'RAINFALL_lag3', 'RAINFALL_lag4',
+        'TMAX_lag1', 'TMAX_lag2', 'TMAX_lag3', 'TMAX_lag4',
+        'TMIN_lag1', 'TMIN_lag2', 'TMIN_lag3', 'TMIN_lag4',
+        'TMEAN_lag1', 'TMEAN_lag2', 'TMEAN_lag3', 'TMEAN_lag4',
+        'RH_lag1', 'RH_lag2', 'RH_lag3', 'RH_lag4',
+        'SUNSHINE_lag1', 'SUNSHINE_lag2', 'SUNSHINE_lag3', 'SUNSHINE_lag4',
+        'RAINFALL_roll2_mean', 'RAINFALL_roll4_mean', 'RAINFALL_roll2_sum', 'RAINFALL_roll4_sum',
+        'TMEAN_roll2_mean', 'TMEAN_roll4_mean', 'TMEAN_roll2_sum', 'TMEAN_roll4_sum',
+        'RH_roll2_mean', 'RH_roll4_mean', 'RH_roll2_sum', 'RH_roll4_sum',
+        'INCIDENCE_per_100k', 'YEAR_WEEK_numerical'
+    ]
+    df = df[feature_order]
     return df
-
 
 # -------------------------------------
 # 🖥️ STREAMLIT APP
 # -------------------------------------
 st.title("🦠 Weekly Dengue Early Warning System")
-st.markdown("Predicts dengue risk based on WeatherAPI data and feature-engineered trends (lags & rolling windows).")
+st.markdown("Predicts dengue risk using WeatherAPI + lag & rolling features aligned with model input.")
 
-city = st.selectbox("Select City", list(CITY_DATA.keys()))
+city = st.selectbox("🏙️ Select City", list(CITY_DATA.keys()))
+
 if st.button("Run Weekly Prediction"):
     try:
-        with st.spinner("Fetching weather data..."):
+        with st.spinner("Fetching 7-day weather data..."):
             weather_df = fetch_weather_forecast(city)
-        st.success("✅ Weather data fetched successfully.")
+        st.success("✅ Weather data fetched successfully!")
         st.dataframe(weather_df)
 
         with st.spinner("Preparing features..."):
@@ -157,9 +185,9 @@ if st.button("Run Weekly Prediction"):
             df_ready["Predicted_Risk"] = [labels[np.argmax(p)] for p in preds]
 
         st.subheader("📊 Weekly Dengue Risk Forecast")
-        st.dataframe(df_ready[["DATE", "CITY", "Predicted_Risk"]])
+        st.dataframe(df_ready[["YEAR_WEEK_numerical", "Predicted_Risk"]])
 
-        st.line_chart(df_ready.set_index("DATE")["Predicted_Risk"].astype("category").cat.codes)
+        st.line_chart(df_ready.set_index("YEAR_WEEK_numerical")["Predicted_Risk"].astype("category").cat.codes)
 
     except Exception as e:
         st.error(f"❌ Error: {e}")
