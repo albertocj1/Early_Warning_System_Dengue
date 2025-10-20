@@ -20,10 +20,6 @@ st.set_page_config(page_title="🦟 Dengue Weekly Early Warning System", page_ic
 # -------------------------------------
 WEATHER_API_KEY = "9c8585dd43864b27a66224931251910"
 
-# Meteomatics credentials
-METEO_USERNAME = "nationaluniversity-manila_alberto_christianjoshua"
-METEO_PASSWORD = "l1898PFZcsuDiKEMOhM0"
-
 # -------------------------------------
 # 📦 MODEL PATHS
 # -------------------------------------
@@ -31,26 +27,16 @@ MODEL_PATH = "Model/dengue_classification_model.keras"
 SCALER_PATH = "Model/scaler_classification.pkl"
 
 # -------------------------------------
-# 🌍 STATIC CITY DATA (add lat/lon for Meteomatics)
+# 🌍 STATIC CITY DATA
 # -------------------------------------
 CITY_DATA = {
-    "MANILA CITY": {"lat": 14.6, "lon": 120.98, "land_area": 24.98, "pop_2015": 1780148, "pop_2020": 1846513},
-    "QUEZON CITY": {"lat": 14.676, "lon": 121.0437, "land_area": 171.71, "pop_2015": 2936116, "pop_2020": 2960048},
-    "CALOOCAN CITY": {"lat": 14.65, "lon": 120.97, "land_area": 55.8, "pop_2015": 1583978, "pop_2020": 1661584},
-    "LAS PINAS CITY": {"lat": 14.45, "lon": 120.98, "land_area": 32.69, "pop_2015": 588894, "pop_2020": 606293},
-    "MAKATI CITY": {"lat": 14.55, "lon": 121.03, "land_area": 21.57, "pop_2015": 582602, "pop_2020": 629616},
-    "MALABON CITY": {"lat": 14.67, "lon": 120.96, "land_area": 15.71, "pop_2015": 365525, "pop_2020": 380522},
-    "MANDALUYONG CITY": {"lat": 14.58, "lon": 121.04, "land_area": 9.29, "pop_2015": 386276, "pop_2020": 425758},
-    "MARIKINA CITY": {"lat": 14.65, "lon": 121.1, "land_area": 21.52, "pop_2015": 450741, "pop_2020": 456059},
-    "MUNTINLUPA CITY": {"lat": 14.38, "lon": 121.04, "land_area": 39.75, "pop_2015": 504509, "pop_2020": 543445},
-    "NAVOTAS CITY": {"lat": 14.67, "lon": 120.95, "land_area": 8.94, "pop_2015": 249463, "pop_2020": 247543},
-    "PARANAQUE CITY": {"lat": 14.48, "lon": 121.02, "land_area": 46.57, "pop_2015": 665822, "pop_2020": 689992},
-    "PASAY CITY": {"lat": 14.55, "lon": 121.0, "land_area": 55.8, "pop_2015": 416522, "pop_2020": 440656},
-    "PASIG CITY": {"lat": 14.58, "lon": 121.08, "land_area": 48.46, "pop_2015": 755300, "pop_2020": 803159},
-    "PATEROS": {"lat": 14.55, "lon": 121.07, "land_area": 10.4, "pop_2015": 63840, "pop_2020": 65227},
-    "SAN JUAN CITY": {"lat": 14.6, "lon": 121.03, "land_area": 5.95, "pop_2015": 122180, "pop_2020": 126347},
-    "TAGUIG CITY": {"lat": 14.52, "lon": 121.05, "land_area": 45.21, "pop_2015": 804915, "pop_2020": 886722},
-    "VALENZUELA CITY": {"lat": 14.7, "lon": 120.97, "land_area": 47.02, "pop_2015": 620422, "pop_2020": 714978},
+    "MANILA CITY": {"land_area": 24.98, "pop_2015": 1780148, "pop_2020": 1846513, "lat": 14.6, "lon": 120.98},
+    "QUEZON CITY": {"land_area": 171.71, "pop_2015": 2936116, "pop_2020": 2960048, "lat": 14.65, "lon": 121.03},
+    "CALOOCAN CITY": {"land_area": 55.8, "pop_2015": 1583978, "pop_2020": 1661584, "lat": 14.65, "lon": 120.97},
+    "LAS PINAS CITY": {"land_area": 32.69, "pop_2015": 588894, "pop_2020": 606293, "lat": 14.45, "lon": 120.98},
+    "MAKATI CITY": {"land_area": 21.57, "pop_2015": 582602, "pop_2020": 629616, "lat": 14.55, "lon": 121.03},
+    "PASIG CITY": {"land_area": 48.46, "pop_2015": 755300, "pop_2020": 803159, "lat": 14.57, "lon": 121.08},
+    "TAGUIG CITY": {"land_area": 45.21, "pop_2015": 804915, "pop_2020": 886722, "lat": 14.52, "lon": 121.05},
 }
 
 # -------------------------------------
@@ -62,24 +48,55 @@ def load_model_and_scaler():
     scaler = joblib.load(SCALER_PATH)
     return model, scaler
 
-
 model_classification, scaler_classification = load_model_and_scaler()
 
 # -------------------------------------
-# 🌦️ WEATHERAPI
+# ☀️ FETCH SUNSHINE DATA FROM METEOMATICS
+# -------------------------------------
+def fetch_sunshine_meteomatics(lat=14.6, lon=120.98, days=7):
+    """Fetch sunshine duration (in hours) from Meteomatics API for next 7 days."""
+    username = "nationaluniversity-manila_alberto_christianjoshua"
+    password = "l1898PFZcsuDiKEMOhM0"
+
+    # Only fetch within allowed access window
+    start_date = datetime.datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    end_date = start_date + datetime.timedelta(days=days - 1)
+
+    start_str = start_date.strftime("%Y-%m-%dT%H:%M:%SZ")
+    end_str = end_date.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    parameter = "sunshine_duration_24h:min"
+    url = f"https://api.meteomatics.com/{start_str}--{end_str}:P1D/{parameter}/{lat},{lon}/json"
+
+    r = requests.get(url, auth=(username, password), timeout=10)
+    if r.status_code != 200:
+        raise RuntimeError(f"Meteomatics error {r.status_code}: {r.text}")
+
+    data = r.json()
+    records = []
+    for item in data["data"][0]["coordinates"][0]["dates"]:
+        date = item["date"].split("T")[0]
+        minutes = item["value"]
+        hours = round(minutes / 60, 2)
+        records.append({"DATE": date, "SUNSHINE": hours})
+    return pd.DataFrame(records)
+
+# -------------------------------------
+# 🌦️ FETCH WEATHER FROM WEATHERAPI
 # -------------------------------------
 def fetch_weather_forecast(city: str, days: int = 7):
+    """Fetch 7-day forecast from WeatherAPI + Meteomatics sunshine data."""
     url = f"http://api.weatherapi.com/v1/forecast.json?key={WEATHER_API_KEY}&q={city}&days={days}"
     r = requests.get(url, timeout=10)
     if r.status_code != 200:
         raise RuntimeError(f"WeatherAPI error {r.status_code}: {r.text}")
     data = r.json()
 
-    records = []
+    weather_records = []
     for day in data["forecast"]["forecastday"]:
         date = day["date"]
         f = day["day"]
-        records.append({
+        weather_records.append({
             "DATE": date,
             "RAINFALL": f["totalprecip_mm"],
             "TMAX": f["maxtemp_c"],
@@ -87,26 +104,16 @@ def fetch_weather_forecast(city: str, days: int = 7):
             "TMEAN": f["avgtemp_c"],
             "RH": f["avghumidity"],
         })
-    return pd.DataFrame(records)
 
-# -------------------------------------
-# ☀️ METEOMATICS SUNSHINE
-# -------------------------------------
-def fetch_meteomatics_sunshine(lat, lon, start_date, end_date):
-    """Fetch sunshine duration in hours from Meteomatics API."""
-    param = "sunshine_duration_24h:min"
-    url = f"https://api.meteomatics.com/{start_date}--{end_date}:P1D/{param}/{lat},{lon}/json"
-    resp = requests.get(url, auth=(METEO_USERNAME, METEO_PASSWORD))
-    if resp.status_code != 200:
-        raise RuntimeError(f"Meteomatics error {resp.status_code}: {resp.text}")
+    weather_df = pd.DataFrame(weather_records)
 
-    data = resp.json()
-    out = []
-    for item in data["data"][0]["coordinates"][0]["dates"]:
-        date = item["date"].split("T")[0]
-        minutes = item["value"]
-        out.append({"DATE": date, "SUNSHINE": round(minutes / 60, 2)})  # convert to hours
-    return pd.DataFrame(out)
+    # Fetch sunshine from Meteomatics
+    city_info = CITY_DATA.get(city, {"lat": 14.6, "lon": 120.98})
+    sunshine_df = fetch_sunshine_meteomatics(city_info["lat"], city_info["lon"], days)
+
+    # Merge both
+    merged_df = pd.merge(weather_df, sunshine_df, on="DATE", how="left")
+    return merged_df
 
 # -------------------------------------
 # 📈 FEATURE ENGINEERING
@@ -114,39 +121,44 @@ def fetch_meteomatics_sunshine(lat, lon, start_date, end_date):
 def add_lag_and_rolling(df):
     df = df.sort_values("DATE").reset_index(drop=True)
     numeric_cols = ["RAINFALL", "TMAX", "TMIN", "TMEAN", "RH", "SUNSHINE"]
+
     for col in numeric_cols:
         for lag in range(1, 5):
             df[f"{col}_lag{lag}"] = df[col].shift(lag)
+
     for col in ["RAINFALL", "TMEAN", "RH"]:
         df[f"{col}_roll2_mean"] = df[col].rolling(2).mean()
         df[f"{col}_roll4_mean"] = df[col].rolling(4).mean()
         df[f"{col}_roll2_sum"] = df[col].rolling(2).sum()
         df[f"{col}_roll4_sum"] = df[col].rolling(4).sum()
+
     return df.dropna().reset_index(drop=True)
 
 # -------------------------------------
-# 🧮 POPULATION
+# 🧮 POPULATION PROJECTION
 # -------------------------------------
 def project_population(city, target_year=2025):
     info = CITY_DATA[city]
     p2015, p2020 = info["pop_2015"], info["pop_2020"]
-    rate = (p2020 / p2015) ** (1 / 5) - 1
-    return int(p2020 * ((1 + rate) ** (target_year - 2020)))
+    growth_rate = (p2020 / p2015) ** (1 / 5) - 1
+    return int(p2020 * ((1 + growth_rate) ** (target_year - 2020)))
 
 # -------------------------------------
-# 🧩 DATA PIPELINE
+# 🧩 PREDICTION DATA PIPELINE
 # -------------------------------------
 def prepare_data(df, city):
     pop = project_population(city)
     area = CITY_DATA[city]["land_area"]
 
-    df["POPULATION"] = pop
+    df["CITY"] = city
     df["LAND AREA"] = area
+    df["POPULATION"] = pop
     df["POP_DENSITY"] = pop / area
-    df["INCIDENCE_per_100k"] = 0.0
     df["YEAR_WEEK_numerical"] = df["DATE"].apply(
         lambda x: int(pd.to_datetime(x).isocalendar().year * 100 + pd.to_datetime(x).isocalendar().week)
     )
+    df["INCIDENCE_per_100k"] = 0.0
+
     df = add_lag_and_rolling(df)
 
     feature_order = [
@@ -166,36 +178,27 @@ def prepare_data(df, city):
     return df[feature_order]
 
 # -------------------------------------
-# 🖥️ STREAMLIT UI
+# 🖥️ STREAMLIT APP
 # -------------------------------------
 st.title("🦠 Weekly Dengue Early Warning System")
-st.markdown("Integrates **WeatherAPI** (rain, temp, RH) and **Meteomatics** (sunshine) with lag & rolling features.")
+st.markdown("Predicts dengue risk using WeatherAPI + Meteomatics sunshine + lag & rolling features.")
 
 city = st.selectbox("🏙️ Select City", list(CITY_DATA.keys()))
 
 if st.button("Run Weekly Prediction"):
     try:
-        with st.spinner("Fetching 7-day weather data..."):
+        with st.spinner("Fetching weather and sunshine data..."):
             weather_df = fetch_weather_forecast(city)
-        st.success("✅ Weather data fetched!")
+        st.success("✅ Data fetched successfully!")
+        st.dataframe(weather_df)
 
-        with st.spinner("Fetching sunshine data from Meteomatics..."):
-            lat, lon = CITY_DATA[city]["lat"], CITY_DATA[city]["lon"]
-            start = (datetime.date.today() - datetime.timedelta(days=6)).strftime("%Y-%m-%dT00:00:00Z")
-            end = datetime.date.today().strftime("%Y-%m-%dT00:00:00Z")
-            sun_df = fetch_meteomatics_sunshine(lat, lon, start, end)
-        st.success("✅ Sunshine data fetched!")
-
-        merged = pd.merge(weather_df, sun_df, on="DATE", how="left")
-        st.dataframe(merged)
-
-        with st.spinner("Preparing features..."):
-            df_ready = prepare_data(merged, city)
+        with st.spinner("Preparing model features..."):
+            df_ready = prepare_data(weather_df, city)
             X = df_ready.select_dtypes(include=[np.number])
             X_scaled = scaler_classification.transform(X)
             X_scaled = X_scaled.reshape((X_scaled.shape[0], 1, X_scaled.shape[1]))
 
-        with st.spinner("Predicting dengue risk..."):
+        with st.spinner("Running model predictions..."):
             preds = model_classification.predict(X_scaled)
             labels = ["Low", "Moderate", "High", "Very High"]
             df_ready["Predicted_Risk"] = [labels[np.argmax(p)] for p in preds]
@@ -203,6 +206,11 @@ if st.button("Run Weekly Prediction"):
         st.subheader("📊 Weekly Dengue Risk Forecast")
         st.dataframe(df_ready[["YEAR_WEEK_numerical", "Predicted_Risk"]])
 
+        # Export results to CSV
+        csv = df_ready.to_csv(index=False).encode("utf-8")
+        st.download_button("📥 Download Full Results as CSV", data=csv, file_name=f"{city}_dengue_forecast.csv", mime="text/csv")
+
+        # Chart
         st.line_chart(df_ready.set_index("YEAR_WEEK_numerical")["Predicted_Risk"].astype("category").cat.codes)
 
     except Exception as e:
