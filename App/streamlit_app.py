@@ -3,13 +3,18 @@ import numpy as np
 import tensorflow as tf
 import streamlit as st
 import joblib
+import requests
+import datetime
 import warnings
 from sklearn.exceptions import InconsistentVersionWarning
 
-# --- Suppress sklearn version mismatch warnings (safe for StandardScaler) ---
+# --- Suppress sklearn version mismatch warnings ---
 warnings.filterwarnings("ignore", category=InconsistentVersionWarning)
 
-# --- Paths to model and scaler ---
+# --- Your WeatherAPI key (directly used) ---
+API_KEY = "9c8585dd43864b27a66224931251910"
+
+# --- Model paths ---
 MODEL_PATH = "Model/dengue_classification_model.keras"
 SCALER_PATH = "Model/scaler_classification.pkl"
 
@@ -17,15 +22,11 @@ SCALER_PATH = "Model/scaler_classification.pkl"
 try:
     model_classification = tf.keras.models.load_model(MODEL_PATH)
     scaler_classification = joblib.load(SCALER_PATH)
-    st.success("✅ Model and Scaler loaded successfully!")
-except FileNotFoundError:
-    st.error("❌ Model or scaler file not found. Ensure both exist in the /Model directory.")
-    st.stop()
 except Exception as e:
     st.error(f"⚠️ Error loading model or scaler: {e}")
     st.stop()
 
-# --- Define the model's expected input features ---
+# --- Feature columns expected by the model ---
 FEATURE_COLUMNS = [
     'RAINFALL', 'TMAX', 'TMIN', 'TMEAN', 'RH', 'SUNSHINE', 'POPULATION',
     'LAND AREA', 'POP_DENSITY', 'RAINFALL_lag1', 'RAINFALL_lag2',
@@ -40,89 +41,86 @@ FEATURE_COLUMNS = [
     'RH_roll4_sum', 'INCIDENCE_per_100k', 'YEAR_WEEK_numerical'
 ]
 
-# --- Preprocessing Function ---
-def preprocess_input(input_df: pd.DataFrame):
-    """Preprocess user input for the dengue risk prediction model."""
-    
-    # Convert YEAR_WEEK (e.g., 2023-W40) to a numeric representation (YYYYWW)
-    if 'YEAR_WEEK' in input_df.columns:
-        def convert_year_week_to_numerical(week_str):
-            try:
-                year, week = week_str.split('-W')
-                return int(year) * 100 + int(week)
-            except:
-                return np.nan
+# --- Fetch Weather Data from WeatherAPI ---
+def fetch_weather_data(location: str):
+    """Fetch 7-day weather forecast data from WeatherAPI."""
+    url = f"http://api.weatherapi.com/v1/forecast.json?key={API_KEY}&q={location}&days=7"
+    response = requests.get(url)
+    if response.status_code != 200:
+        st.error(f"❌ Failed to fetch weather data: {response.text}")
+        return None
+    return response.json()
 
-        input_df['YEAR_WEEK_numerical'] = input_df['YEAR_WEEK'].apply(convert_year_week_to_numerical)
-        input_df.drop(columns=['YEAR_WEEK'], inplace=True, errors='ignore')
+# --- Process weather data into model-ready format ---
+def process_weather_data(weather_data):
+    forecast_days = weather_data['forecast']['forecastday']
+    rainfall = [day['day']['totalprecip_mm'] for day in forecast_days]
+    tmax = [day['day']['maxtemp_c'] for day in forecast_days]
+    tmin = [day['day']['mintemp_c'] for day in forecast_days]
+    tmean = [(hi + lo) / 2 for hi, lo in zip(tmax, tmin)]
+    rh = [day['day']['avghumidity'] for day in forecast_days]
+    sunshine = [day['day']['daily_chance_of_sunshine'] for day in forecast_days]
 
-        # ✅ Fixed assignment to avoid chained assignment warning
-        if input_df['YEAR_WEEK_numerical'].isnull().any():
-            input_df['YEAR_WEEK_numerical'] = input_df['YEAR_WEEK_numerical'].fillna(
-                input_df['YEAR_WEEK_numerical'].mean()
-            )
+    week_data = {
+        'RAINFALL': np.mean(rainfall),
+        'TMAX': np.mean(tmax),
+        'TMIN': np.mean(tmin),
+        'TMEAN': np.mean(tmean),
+        'RH': np.mean(rh),
+        'SUNSHINE': np.mean(sunshine),
+        'YEAR_WEEK_numerical': int(datetime.date.today().strftime("%Y%W")),
+        # Static socio-demographic placeholders (can be updated for your city)
+        'POPULATION': 150000,
+        'LAND AREA': 100,
+        'POP_DENSITY': 1500,
+        'INCIDENCE_per_100k': 0
+    }
 
-    # Ensure all required features are present
+    # Fill lag and rolling features with 0 (for live weekly prediction)
     for col in FEATURE_COLUMNS:
-        if col not in input_df.columns:
-            input_df[col] = 0
+        if col not in week_data:
+            week_data[col] = 0
 
-    # Enforce column order
-    input_df = input_df[FEATURE_COLUMNS]
+    df = pd.DataFrame([week_data])
+    df = df[FEATURE_COLUMNS]
+    df[FEATURE_COLUMNS] = scaler_classification.transform(df[FEATURE_COLUMNS])
+    reshaped = df.values.reshape((df.shape[0], 1, df.shape[1]))
+    return reshaped, week_data
 
-    # Scale features using the loaded scaler
-    try:
-        input_df[FEATURE_COLUMNS] = scaler_classification.transform(input_df[FEATURE_COLUMNS])
-    except Exception as e:
-        st.warning("⚠️ Scaling may not be applied properly. Check your scaler version or data format.")
-        st.write(e)
+# --- Streamlit UI ---
+st.set_page_config(page_title="Dengue Early Warning System", page_icon="🦠")
+st.title("🦠 Weekly Dengue Early Warning System")
+st.markdown("Predict dengue risk based on **real-time 7-day weather forecasts** using WeatherAPI and deep learning.")
 
-    # Reshape for CNN-LSTM model input: (samples, timesteps, features)
-    input_reshaped = input_df.values.reshape((input_df.shape[0], 1, input_df.shape[1]))
-    return input_reshaped
+# --- User input ---
+location = st.text_input("📍 Enter City or Province (e.g., Manila, Cebu, Davao):", "Manila")
 
-# --- Streamlit Interface ---
-st.title("🦠 Dengue Risk Level Prediction")
-st.markdown("Enter the feature values below to predict the **Dengue Risk Level** for a given week.")
+if st.button("🔍 Generate Weekly Prediction"):
+    with st.spinner("Fetching weather data and predicting dengue risk..."):
+        weather_data = fetch_weather_data(location)
+        if weather_data:
+            processed_input, week_summary = process_weather_data(weather_data)
+            prediction = model_classification.predict(processed_input)
+            predicted_labels = (prediction > 0.5).astype(int)
+            risk_labels = ['Low', 'Moderate', 'High', 'Very High']
+            predicted_risk_levels = [risk_labels[i] for i, label in enumerate(predicted_labels[0]) if label == 1]
 
-input_data = {}
-st.subheader("🌤 Environmental and Socio-Demographic Inputs")
+            # --- Display results ---
+            st.subheader("🌦 Weekly Weather Summary")
+            st.dataframe(pd.DataFrame([week_summary]))
 
-# Input fields for all features except YEAR_WEEK_numerical (user enters YEAR_WEEK)
-for feature in FEATURE_COLUMNS:
-    if feature == 'YEAR_WEEK_numerical':
-        year_week_str = st.text_input("YEAR_WEEK (e.g., 2023-W40)", value="2023-W40")
-        input_data['YEAR_WEEK'] = year_week_str
-    else:
-        input_data[feature] = st.number_input(feature, value=0.0, format="%.4f")
+            st.subheader("📊 Predicted Dengue Risk Level")
+            if predicted_risk_levels:
+                for r in predicted_risk_levels:
+                    if r == "Low":
+                        st.success(f"🟢 **Risk Level:** {r}")
+                    elif r == "Moderate":
+                        st.info(f"🟡 **Risk Level:** {r}")
+                    elif r == "High":
+                        st.warning(f"🟠 **Risk Level:** {r}")
+                    else:
+                        st.error(f"🔴 **Risk Level:** {r}")
+            else:
+                st.warning("No risk level detected (model output below threshold).")
 
-# --- Prediction Button ---
-if st.button("🔍 Predict Risk Level"):
-    try:
-        # Convert user input to DataFrame
-        input_df = pd.DataFrame([input_data])
-        processed_input = preprocess_input(input_df)
-
-        # Run model prediction
-        prediction_probabilities = model_classification.predict(processed_input)
-        predicted_labels = (prediction_probabilities > 0.5).astype(int)
-
-        # Define class labels (ensure same order as training output)
-        risk_labels = ['Low', 'Moderate', 'High', 'Very High']
-
-        # Display prediction results
-        st.subheader("📊 Prediction Results:")
-        predicted_risk_levels = [risk_labels[i] for i, label in enumerate(predicted_labels[0]) if label == 1]
-
-        if predicted_risk_levels:
-            st.success("### Predicted Risk Level(s):")
-            for risk in predicted_risk_levels:
-                st.write(f"- **{risk}**")
-        else:
-            st.warning("No clear risk level detected above threshold.")
-            st.write("**Raw Prediction Probabilities:**")
-            for i, label in enumerate(risk_labels):
-                st.write(f"{label}: {prediction_probabilities[0][i]:.4f}")
-
-    except Exception as e:
-        st.error(f"❌ Error during prediction: {e}")
+            st.caption("⚙️ Powered by WeatherAPI and Deep Learning (CNN-LSTM).")
