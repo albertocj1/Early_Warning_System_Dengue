@@ -58,10 +58,8 @@ def fetch_sunshine_meteomatics(lat=14.6, lon=120.98, days=7):
     username = "nationaluniversity-manila_alberto_christianjoshua"
     password = "l1898PFZcsuDiKEMOhM0"
 
-    # Only fetch within allowed access window
     start_date = datetime.datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     end_date = start_date + datetime.timedelta(days=days - 1)
-
     start_str = start_date.strftime("%Y-%m-%dT%H:%M:%SZ")
     end_str = end_date.strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -107,11 +105,8 @@ def fetch_weather_forecast(city: str, days: int = 7):
 
     weather_df = pd.DataFrame(weather_records)
 
-    # Fetch sunshine from Meteomatics
     city_info = CITY_DATA.get(city, {"lat": 14.6, "lon": 120.98})
     sunshine_df = fetch_sunshine_meteomatics(city_info["lat"], city_info["lon"], days)
-
-    # Merge both
     merged_df = pd.merge(weather_df, sunshine_df, on="DATE", how="left")
     return merged_df
 
@@ -157,7 +152,6 @@ def prepare_data(df, city):
     df["YEAR_WEEK_numerical"] = df["DATE"].apply(
         lambda x: int(pd.to_datetime(x).isocalendar().year * 100 + pd.to_datetime(x).isocalendar().week)
     )
-    df["INCIDENCE_per_100k"] = 0.0
 
     df = add_lag_and_rolling(df)
 
@@ -173,7 +167,7 @@ def prepare_data(df, city):
         'RAINFALL_roll2_mean', 'RAINFALL_roll4_mean', 'RAINFALL_roll2_sum', 'RAINFALL_roll4_sum',
         'TMEAN_roll2_mean', 'TMEAN_roll4_mean', 'TMEAN_roll2_sum', 'TMEAN_roll4_sum',
         'RH_roll2_mean', 'RH_roll4_mean', 'RH_roll2_sum', 'RH_roll4_sum',
-        'INCIDENCE_per_100k', 'YEAR_WEEK_numerical'
+        'YEAR_WEEK_numerical'
     ]
     return df[feature_order]
 
