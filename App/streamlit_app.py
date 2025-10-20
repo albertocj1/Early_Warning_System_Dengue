@@ -1,4 +1,3 @@
-# streamlit_ews.py
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -136,7 +135,7 @@ def project_population(city, target_year=2025):
     return int(p2020 * ((1 + growth_rate) ** (target_year - 2020)))
 
 # -------------------------------------
-# 🧩 PREDICTION DATA PIPELINE (UPDATED)
+# 🧩 PREDICTION DATA PIPELINE
 # -------------------------------------
 def prepare_data(df, city, recent_cases):
     pop = project_population(city)
@@ -166,20 +165,27 @@ def prepare_data(df, city, recent_cases):
     feature_order = [
         'RAINFALL', 'TMAX', 'TMIN', 'TMEAN', 'RH', 'SUNSHINE',
         'POPULATION', 'LAND AREA', 'POP_DENSITY',
+        'CASES_lag1', 'CASES_lag2', 'CASES_lag3', 'CASES_lag4',
         'RAINFALL_lag1', 'RAINFALL_lag2', 'RAINFALL_lag3', 'RAINFALL_lag4',
         'TMAX_lag1', 'TMAX_lag2', 'TMAX_lag3', 'TMAX_lag4',
         'TMIN_lag1', 'TMIN_lag2', 'TMIN_lag3', 'TMIN_lag4',
         'TMEAN_lag1', 'TMEAN_lag2', 'TMEAN_lag3', 'TMEAN_lag4',
         'RH_lag1', 'RH_lag2', 'RH_lag3', 'RH_lag4',
         'SUNSHINE_lag1', 'SUNSHINE_lag2', 'SUNSHINE_lag3', 'SUNSHINE_lag4',
+        'CASES_roll2_mean', 'CASES_roll4_mean', 'CASES_roll2_sum', 'CASES_roll4_sum',
         'RAINFALL_roll2_mean', 'RAINFALL_roll4_mean', 'RAINFALL_roll2_sum', 'RAINFALL_roll4_sum',
         'TMEAN_roll2_mean', 'TMEAN_roll4_mean', 'TMEAN_roll2_sum', 'TMEAN_roll4_sum',
         'RH_roll2_mean', 'RH_roll4_mean', 'RH_roll2_sum', 'RH_roll4_sum',
-        'CASES_lag1', 'CASES_lag2', 'CASES_lag3', 'CASES_lag4',
-        'CASES_roll2_mean', 'CASES_roll4_mean', 'CASES_roll2_sum', 'CASES_roll4_sum',
         'YEAR_WEEK_numerical'
     ]
-    return df[feature_order]
+
+    # ✅ Ensure all required columns exist and in correct order
+    for col in feature_order:
+        if col not in df.columns:
+            df[col] = 0
+    df = df[feature_order]
+
+    return df
 
 # -------------------------------------
 # 🖥️ STREAMLIT APP
@@ -207,7 +213,10 @@ if st.button("Run Weekly Prediction"):
 
         with st.spinner("Preparing model features..."):
             df_ready = prepare_data(weather_df, city, recent_cases)
+
+            # ✅ Align and scale safely
             X = df_ready.select_dtypes(include=[np.number])
+            X = X.replace([np.inf, -np.inf], 0).fillna(0)
             X_scaled = scaler_classification.transform(X)
             X_scaled = X_scaled.reshape((X_scaled.shape[0], 1, X_scaled.shape[1]))
 
@@ -220,7 +229,12 @@ if st.button("Run Weekly Prediction"):
         st.dataframe(df_ready[["YEAR_WEEK_numerical", "Predicted_Risk"]])
 
         csv = df_ready.to_csv(index=False).encode("utf-8")
-        st.download_button("📥 Download Full Results as CSV", data=csv, file_name=f"{city}_dengue_forecast.csv", mime="text/csv")
+        st.download_button(
+            "📥 Download Full Results as CSV",
+            data=csv,
+            file_name=f"{city}_dengue_forecast.csv",
+            mime="text/csv"
+        )
 
         st.line_chart(df_ready.set_index("YEAR_WEEK_numerical")["Predicted_Risk"].astype("category").cat.codes)
 
