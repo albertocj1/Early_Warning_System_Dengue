@@ -54,7 +54,6 @@ model_classification, scaler_classification = load_model_and_scaler()
 # ☀️ FETCH SUNSHINE DATA FROM METEOMATICS
 # -------------------------------------
 def fetch_sunshine_meteomatics(lat=14.6, lon=120.98, days=7):
-    """Fetch sunshine duration (in hours) from Meteomatics API for next 7 days."""
     username = "nationaluniversity-manila_alberto_christianjoshua"
     password = "l1898PFZcsuDiKEMOhM0"
 
@@ -83,7 +82,6 @@ def fetch_sunshine_meteomatics(lat=14.6, lon=120.98, days=7):
 # 🌦️ FETCH WEATHER FROM WEATHERAPI
 # -------------------------------------
 def fetch_weather_forecast(city: str, days: int = 7):
-    """Fetch 7-day forecast from WeatherAPI + Meteomatics sunshine data."""
     url = f"http://api.weatherapi.com/v1/forecast.json?key={WEATHER_API_KEY}&q={city}&days={days}"
     r = requests.get(url, timeout=10)
     if r.status_code != 200:
@@ -104,7 +102,6 @@ def fetch_weather_forecast(city: str, days: int = 7):
         })
 
     weather_df = pd.DataFrame(weather_records)
-
     city_info = CITY_DATA.get(city, {"lat": 14.6, "lon": 120.98})
     sunshine_df = fetch_sunshine_meteomatics(city_info["lat"], city_info["lon"], days)
     merged_df = pd.merge(weather_df, sunshine_df, on="DATE", how="left")
@@ -139,9 +136,9 @@ def project_population(city, target_year=2025):
     return int(p2020 * ((1 + growth_rate) ** (target_year - 2020)))
 
 # -------------------------------------
-# 🧩 PREDICTION DATA PIPELINE
+# 🧩 PREDICTION DATA PIPELINE (UPDATED)
 # -------------------------------------
-def prepare_data(df, city):
+def prepare_data(df, city, recent_cases):
     pop = project_population(city)
     area = CITY_DATA[city]["land_area"]
 
@@ -155,6 +152,17 @@ def prepare_data(df, city):
 
     df = add_lag_and_rolling(df)
 
+    # --- Manual dengue case inputs ---
+    df["CASES_lag1"] = recent_cases[0]
+    df["CASES_lag2"] = recent_cases[1]
+    df["CASES_lag3"] = recent_cases[2]
+    df["CASES_lag4"] = recent_cases[3]
+
+    df["CASES_roll2_mean"] = np.mean(recent_cases[:2])
+    df["CASES_roll4_mean"] = np.mean(recent_cases)
+    df["CASES_roll2_sum"] = np.sum(recent_cases[:2])
+    df["CASES_roll4_sum"] = np.sum(recent_cases)
+
     feature_order = [
         'RAINFALL', 'TMAX', 'TMIN', 'TMEAN', 'RH', 'SUNSHINE',
         'POPULATION', 'LAND AREA', 'POP_DENSITY',
@@ -167,6 +175,8 @@ def prepare_data(df, city):
         'RAINFALL_roll2_mean', 'RAINFALL_roll4_mean', 'RAINFALL_roll2_sum', 'RAINFALL_roll4_sum',
         'TMEAN_roll2_mean', 'TMEAN_roll4_mean', 'TMEAN_roll2_sum', 'TMEAN_roll4_sum',
         'RH_roll2_mean', 'RH_roll4_mean', 'RH_roll2_sum', 'RH_roll4_sum',
+        'CASES_lag1', 'CASES_lag2', 'CASES_lag3', 'CASES_lag4',
+        'CASES_roll2_mean', 'CASES_roll4_mean', 'CASES_roll2_sum', 'CASES_roll4_sum',
         'YEAR_WEEK_numerical'
     ]
     return df[feature_order]
@@ -179,6 +189,15 @@ st.markdown("Predicts dengue risk using WeatherAPI + Meteomatics sunshine + lag 
 
 city = st.selectbox("🏙️ Select City", list(CITY_DATA.keys()))
 
+# --- Manual dengue case input section ---
+st.markdown("### 🧮 Enter Recent Weekly Dengue Cases")
+col1, col2, col3, col4 = st.columns(4)
+case_week1 = col1.number_input("Week -1 (Most Recent)", min_value=0, step=1, value=10)
+case_week2 = col2.number_input("Week -2", min_value=0, step=1, value=8)
+case_week3 = col3.number_input("Week -3", min_value=0, step=1, value=6)
+case_week4 = col4.number_input("Week -4", min_value=0, step=1, value=5)
+recent_cases = [case_week1, case_week2, case_week3, case_week4]
+
 if st.button("Run Weekly Prediction"):
     try:
         with st.spinner("Fetching weather and sunshine data..."):
@@ -187,7 +206,7 @@ if st.button("Run Weekly Prediction"):
         st.dataframe(weather_df)
 
         with st.spinner("Preparing model features..."):
-            df_ready = prepare_data(weather_df, city)
+            df_ready = prepare_data(weather_df, city, recent_cases)
             X = df_ready.select_dtypes(include=[np.number])
             X_scaled = scaler_classification.transform(X)
             X_scaled = X_scaled.reshape((X_scaled.shape[0], 1, X_scaled.shape[1]))
@@ -200,11 +219,9 @@ if st.button("Run Weekly Prediction"):
         st.subheader("📊 Weekly Dengue Risk Forecast")
         st.dataframe(df_ready[["YEAR_WEEK_numerical", "Predicted_Risk"]])
 
-        # Export results to CSV
         csv = df_ready.to_csv(index=False).encode("utf-8")
         st.download_button("📥 Download Full Results as CSV", data=csv, file_name=f"{city}_dengue_forecast.csv", mime="text/csv")
 
-        # Chart
         st.line_chart(df_ready.set_index("YEAR_WEEK_numerical")["Predicted_Risk"].astype("category").cat.codes)
 
     except Exception as e:
