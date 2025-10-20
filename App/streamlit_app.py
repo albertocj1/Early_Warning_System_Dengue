@@ -24,7 +24,7 @@ WEATHER_API_KEY = "9c8585dd43864b27a66224931251910"
 # 📦 MODEL PATHS
 # -------------------------------------
 MODEL_PATH = "Model/dengue_classification_models.keras"
-SCALER_PATH = "Model/scaler_classification.pkl"
+SCALER_PATH = "Model/scaler_classifications.pkl"
 
 # -------------------------------------
 # 🌍 STATIC CITY DATA
