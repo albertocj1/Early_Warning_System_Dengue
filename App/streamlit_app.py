@@ -29,14 +29,25 @@ SCALER_PATH = "Model/scaler_classification.pkl"
 # 🌍 STATIC CITY DATA
 # -------------------------------------
 CITY_DATA = {
-    "MANILA CITY": {"land_area": 24.98, "pop_2015": 1780148, "pop_2020": 1846513, "lat": 14.6, "lon": 120.98},
-    "QUEZON CITY": {"land_area": 171.71, "pop_2015": 2936116, "pop_2020": 2960048, "lat": 14.65, "lon": 121.03},
-    "CALOOCAN CITY": {"land_area": 55.8, "pop_2015": 1583978, "pop_2020": 1661584, "lat": 14.65, "lon": 120.97},
-    "LAS PINAS CITY": {"land_area": 32.69, "pop_2015": 588894, "pop_2020": 606293, "lat": 14.45, "lon": 120.98},
-    "MAKATI CITY": {"land_area": 21.57, "pop_2015": 582602, "pop_2020": 629616, "lat": 14.55, "lon": 121.03},
-    "PASIG CITY": {"land_area": 48.46, "pop_2015": 755300, "pop_2020": 803159, "lat": 14.57, "lon": 121.08},
-    "TAGUIG CITY": {"land_area": 45.21, "pop_2015": 804915, "pop_2020": 886722, "lat": 14.52, "lon": 121.05},
+    "MANILA CITY": {"lat": 14.6, "lon": 120.98, "land_area": 24.98, "pop_2015": 1780148, "pop_2020": 1846513},
+    "QUEZON CITY": {"lat": 14.676, "lon": 121.0437, "land_area": 171.71, "pop_2015": 2936116, "pop_2020": 2960048},
+    "CALOOCAN CITY": {"lat": 14.65, "lon": 120.97, "land_area": 55.8, "pop_2015": 1583978, "pop_2020": 1661584},
+    "LAS PINAS CITY": {"lat": 14.45, "lon": 120.98, "land_area": 32.69, "pop_2015": 588894, "pop_2020": 606293},
+    "MAKATI CITY": {"lat": 14.55, "lon": 121.03, "land_area": 21.57, "pop_2015": 582602, "pop_2020": 629616},
+    "MALABON CITY": {"lat": 14.67, "lon": 120.96, "land_area": 15.71, "pop_2015": 365525, "pop_2020": 380522},
+    "MANDALUYONG CITY": {"lat": 14.58, "lon": 121.04, "land_area": 9.29, "pop_2015": 386276, "pop_2020": 425758},
+    "MARIKINA CITY": {"lat": 14.65, "lon": 121.1, "land_area": 21.52, "pop_2015": 450741, "pop_2020": 456059},
+    "MUNTINLUPA CITY": {"lat": 14.38, "lon": 121.04, "land_area": 39.75, "pop_2015": 504509, "pop_2020": 543445},
+    "NAVOTAS CITY": {"lat": 14.67, "lon": 120.95, "land_area": 8.94, "pop_2015": 249463, "pop_2020": 247543},
+    "PARANAQUE CITY": {"lat": 14.48, "lon": 121.02, "land_area": 46.57, "pop_2015": 665822, "pop_2020": 689992},
+    "PASAY CITY": {"lat": 14.55, "lon": 121.0, "land_area": 55.8, "pop_2015": 416522, "pop_2020": 440656},
+    "PASIG CITY": {"lat": 14.58, "lon": 121.08, "land_area": 48.46, "pop_2015": 755300, "pop_2020": 803159},
+    "PATEROS": {"lat": 14.55, "lon": 121.07, "land_area": 10.4, "pop_2015": 63840, "pop_2020": 65227},
+    "SAN JUAN CITY": {"lat": 14.6, "lon": 121.03, "land_area": 5.95, "pop_2015": 122180, "pop_2020": 126347},
+    "TAGUIG CITY": {"lat": 14.52, "lon": 121.05, "land_area": 45.21, "pop_2015": 804915, "pop_2020": 886722},
+    "VALENZUELA CITY": {"lat": 14.7, "lon": 120.97, "land_area": 47.02, "pop_2015": 620422, "pop_2020": 714978},
 }
+
 
 # -------------------------------------
 # 🧠 LOAD MODEL + SCALER
