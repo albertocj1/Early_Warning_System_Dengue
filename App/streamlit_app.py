@@ -1,160 +1,183 @@
+# streamlit_ews.py
 import streamlit as st
 import pandas as pd
 import numpy as np
 import requests
 import datetime
 import joblib
-from sklearn.preprocessing import StandardScaler
+import tensorflow as tf
+import warnings
+from sklearn.exceptions import InconsistentVersionWarning
 
-# ----------------------------
-# 🔑 WeatherAPI Configuration
-# ----------------------------
+# ---------- CONFIG ----------
+warnings.filterwarnings("ignore", category=InconsistentVersionWarning)
+st.set_page_config(page_title="Dengue Weekly Early Warning System", page_icon="🦠", layout="wide")
+
+# ---------- API KEY ----------
 WEATHER_API_KEY = "9c8585dd43864b27a66224931251910"
-BASE_URL = "https://api.weatherapi.com/v1"
 
-# ----------------------------
-# 🧭 Static Data
-# ----------------------------
-CITY_DATA = {
-    "MANILA CITY": {"land_area": 24.98, "pop_2015": 1780148, "pop_2020": 1846513},
-    "QUEZON CITY": {"land_area": 171.71, "pop_2015": 2936116, "pop_2020": 2960048},
-    "CALOOCAN CITY": {"land_area": 55.8, "pop_2015": 1583978, "pop_2020": 1661584},
-    "LAS PINAS CITY": {"land_area": 32.69, "pop_2015": 588894, "pop_2020": 606293},
-    "MAKATI CITY": {"land_area": 21.57, "pop_2015": 582602, "pop_2020": 629616},
-    "MALABON CITY": {"land_area": 15.71, "pop_2015": 365525, "pop_2020": 380522},
-    "MANDALUYONG CITY": {"land_area": 9.29, "pop_2015": 386276, "pop_2020": 425758},
-    "MARIKINA CITY": {"land_area": 21.52, "pop_2015": 450741, "pop_2020": 456059},
-    "MUNTINLUPA CITY": {"land_area": 39.75, "pop_2015": 504509, "pop_2020": 543445},
-    "NAVOTAS CITY": {"land_area": 8.94, "pop_2015": 249463, "pop_2020": 247543},
-    "PARANAQUE CITY": {"land_area": 46.57, "pop_2015": 665822, "pop_2020": 689992},
-    "PASAY CITY": {"land_area": 55.8, "pop_2015": 416522, "pop_2020": 440656},
-    "PASIG CITY": {"land_area": 48.46, "pop_2015": 755300, "pop_2020": 803159},
-    "PATEROS": {"land_area": 10.4, "pop_2015": 63840, "pop_2020": 65227},
-    "SAN JUAN CITY": {"land_area": 5.95, "pop_2015": 122180, "pop_2020": 126347},
-    "TAGUIG CITY": {"land_area": 45.21, "pop_2015": 804915, "pop_2020": 886722},
-    "VALENZUELA CITY": {"land_area": 47.02, "pop_2015": 620422, "pop_2020": 714978},
+# ---------- MODEL PATHS ----------
+MODEL_PATH = "Model/dengue_classification_model.keras"
+SCALER_PATH = "Model/scaler_classification.pkl"
+
+# ---------- STATIC CITY DATA ----------
+LAND_AREA = {
+    "MANILA CITY": 24.98, "QUEZON CITY": 171.71, "CALOOCAN CITY": 55.8,
+    "LAS PINAS CITY": 32.69, "MAKATI CITY": 21.57, "MALABON CITY": 15.71,
+    "MANDALUYONG CITY": 9.29, "MARIKINA CITY": 21.52, "MUNTINLUPA CITY": 39.75,
+    "NAVOTAS CITY": 8.94, "PARANAQUE CITY": 46.57, "PASAY CITY": 55.8,
+    "PASIG CITY": 48.46, "PATEROS": 10.4, "SAN JUAN CITY": 5.95,
+    "TAGUIG CITY": 45.21, "VALENZUELA CITY": 47.02
 }
 
-# ----------------------------
-# ⚙️ Load Model
-# ----------------------------
-@st.cache_resource
-def load_model():
-    try:
-        model = joblib.load("dengue_model.pkl")
-        return model
-    except:
-        st.error("Model not found. Please upload dengue_model.pkl")
-        return None
+POP_2015_2020 = {
+    "MANILA CITY": (1780148, 1846513),
+    "MANDALUYONG CITY": (386276, 425758),
+    "MARIKINA CITY": (450741, 456059),
+    "PASIG CITY": (755300, 803159),
+    "QUEZON CITY": (2936116, 2960048),
+    "SAN JUAN CITY": (122180, 126347),
+    "CALOOCAN CITY": (1583978, 1661584),
+    "MALABON CITY": (365525, 380522),
+    "NAVOTAS CITY": (249463, 247543),
+    "VALENZUELA CITY": (620422, 714978),
+    "LAS PINAS CITY": (588894, 606293),
+    "MAKATI CITY": (582602, 629616),
+    "MUNTINLUPA CITY": (504509, 543445),
+    "PARANAQUE CITY": (665822, 689992),
+    "PASAY CITY": (416522, 440656),
+    "PATEROS": (63840, 65227),
+    "TAGUIG CITY": (804915, 886722)
+}
 
+# ---------- FUNCTIONS ----------
+def project_population_to_year(city: str, target_year: int = None):
+    if target_year is None:
+        target_year = datetime.date.today().year
+    city_key = city.upper()
+    if city_key not in POP_2015_2020:
+        return 100000
+    p2015, p2020 = POP_2015_2020[city_key]
+    cagr = (p2020 / p2015) ** (1 / 5) - 1
+    years_to_project = target_year - 2020
+    return int(p2020 * ((1 + cagr) ** years_to_project))
 
-# ----------------------------
-# 🌦️ WeatherAPI Fetch Function
-# ----------------------------
-def fetch_weather_data(city):
-    url = f"{BASE_URL}/forecast.json?key={WEATHER_API_KEY}&q={city}&days=7"
-    response = requests.get(url)
+def get_population_density(city: str, population: int):
+    land = LAND_AREA.get(city.upper(), np.nan)
+    return population / land if land > 0 else np.nan
 
-    if response.status_code == 200:
-        data = response.json()
-        forecast_days = data["forecast"]["forecastday"]
+def yr_week_from_date(dt: datetime.date):
+    iso = dt.isocalendar()
+    return iso[0] * 100 + iso[1]
 
-        records = []
-        for day in forecast_days:
-            date = day["date"]
-            avg_temp = day["day"]["avgtemp_c"]
-            max_temp = day["day"]["maxtemp_c"]
-            min_temp = day["day"]["mintemp_c"]
-            rainfall = day["day"]["totalprecip_mm"]
-            humidity = day["day"]["avghumidity"]
-            sunshine = 100 - day["day"]["daily_chance_of_rain"]  # chance of sun (approx)
+def geocode_city(city: str):
+    url = f"http://api.weatherapi.com/v1/search.json?key={WEATHER_API_KEY}&q={city}"
+    r = requests.get(url, timeout=10)
+    data = r.json()
+    if not data:
+        raise ValueError("City not found.")
+    return data[0]["lat"], data[0]["lon"]
 
+def fetch_weatherapi_data(lat: float, lon: float, days: int = 28):
+    """Fetch past 28 days + 7-day forecast."""
+    end_date = datetime.date.today()
+    start_date = end_date - datetime.timedelta(days=days)
+    records = []
+
+    for i in range(days):
+        d = start_date + datetime.timedelta(days=i)
+        url = f"http://api.weatherapi.com/v1/history.json?key={WEATHER_API_KEY}&q={lat},{lon}&dt={d.strftime('%Y-%m-%d')}"
+        r = requests.get(url, timeout=10)
+        data = r.json()
+        if "forecast" in data:
+            f = data["forecast"]["forecastday"][0]["day"]
+            sunshine = 100 - f.get("daily_chance_of_rain", 50)
             records.append({
-                "DATE": date,
-                "RAINFALL": rainfall,
-                "TMAX": max_temp,
-                "TMIN": min_temp,
-                "TMEAN": avg_temp,
-                "RH": humidity,
-                "SUNSHINE": sunshine,
+                "date": d,
+                "RAINFALL": f["totalprecip_mm"],
+                "TMAX": f["maxtemp_c"],
+                "TMIN": f["mintemp_c"],
+                "TMEAN": (f["maxtemp_c"] + f["mintemp_c"]) / 2,
+                "RH": f["avghumidity"],
+                "SUNSHINE": sunshine
             })
+    return pd.DataFrame(records)
 
-        return pd.DataFrame(records)
-    else:
-        st.error(f"WeatherAPI Error {response.status_code}: {response.text}")
-        return None
+def generate_lag_roll_features(df, columns):
+    df = df.sort_values("date").reset_index(drop=True)
+    for col in columns:
+        for lag in range(1, 5):
+            df[f"{col}_lag{lag}"] = df[col].shift(lag)
+        df[f"{col}_roll2"] = df[col].rolling(2).mean()
+        df[f"{col}_roll4"] = df[col].rolling(4).mean()
+    return df.dropna().reset_index(drop=True)
 
+@st.cache_resource
+def load_model_and_scaler():
+    model = tf.keras.models.load_model(MODEL_PATH)
+    scaler = joblib.load(SCALER_PATH)
+    return model, scaler
 
-# ----------------------------
-# 🧮 Feature Engineering
-# ----------------------------
-def add_lag_features(df, column, lags=4):
-    for lag in range(1, lags + 1):
-        df[f"{column}_lag{lag}"] = df[column].shift(lag)
-    return df
+# ---------- LOAD MODEL ----------
+model_classification, scaler_classification = load_model_and_scaler()
 
+# ---------- UI ----------
+st.title("🦠 Dengue Weekly Early Warning System")
+st.markdown("Uses WeatherAPI with lag & rolling features for weekly dengue risk prediction.")
 
-def add_rolling_features(df, column, window=3):
-    df[f"{column}_roll_mean"] = df[column].rolling(window=window).mean()
-    df[f"{column}_roll_std"] = df[column].rolling(window=window).std()
-    return df
+city = st.selectbox("Select City", sorted(list(LAND_AREA.keys())), index=0)
+incidence = st.number_input("Current INCIDENCE_per_100k (if known)", value=0.0, format="%.4f")
 
+if st.button("Generate Weekly Early Warning"):
+    with st.spinner("Fetching weather data and computing features..."):
+        try:
+            lat, lon = geocode_city(city)
 
-# ----------------------------
-# 🧩 Prediction Pipeline
-# ----------------------------
-def prepare_data(df, city):
-    city_info = CITY_DATA[city]
-    df["CITY"] = city
-    df["LAND AREA"] = city_info["land_area"]
+            # Fetch weather data
+            weather_df = fetch_weatherapi_data(lat, lon, days=28)
 
-    # Estimate 2025 population via linear interpolation
-    pop_2015, pop_2020 = city_info["pop_2015"], city_info["pop_2020"]
-    growth_rate = (pop_2020 - pop_2015) / 5
-    pop_2025 = pop_2020 + growth_rate
-    df["POPULATION"] = pop_2025
-    df["POP_DENSITY"] = pop_2025 / city_info["land_area"]
+            # Add lag & rolling features
+            feature_cols = ["RAINFALL", "TMAX", "TMIN", "TMEAN", "RH", "SUNSHINE"]
+            df = generate_lag_roll_features(weather_df, feature_cols)
 
-    # Add lag and rolling features
-    for col in ["RAINFALL", "TMEAN", "RH"]:
-        df = add_lag_features(df, col)
-        df = add_rolling_features(df, col)
+            # Use latest week
+            latest = df.iloc[-1].to_dict()
 
-    # Drop NaN after lag creation
-    df = df.dropna().reset_index(drop=True)
-    return df
+            # Add static features
+            pop_proj = project_population_to_year(city)
+            land = LAND_AREA.get(city.upper(), 0)
+            pop_density = get_population_density(city, pop_proj)
+            latest["POPULATION"] = pop_proj
+            latest["LAND AREA"] = land
+            latest["POP_DENSITY"] = pop_density
+            latest["INCIDENCE_per_100k"] = incidence
+            latest["YEAR_WEEK_numerical"] = int(yr_week_from_date(datetime.date.today()))
 
+            input_df = pd.DataFrame([latest])
 
-# ----------------------------
-# 🖥️ Streamlit Interface
-# ----------------------------
-st.set_page_config(page_title="Weekly Dengue Early Warning System", layout="wide")
+            # Scale and reshape
+            scaled = scaler_classification.transform(input_df)
+            x = scaled.reshape((1, 1, scaled.shape[1]))
 
-st.title("🦟 Weekly Early Warning System for Dengue")
-st.markdown("This app predicts weekly dengue risk using weather and population data from WeatherAPI.com")
+            # Predict
+            probs = model_classification.predict(x)
+            class_labels = ["Low", "Moderate", "High", "Very High"]
+            probs_flat = probs[0]
+            predicted = class_labels[int(np.argmax(probs_flat))]
 
-city = st.selectbox("Select City", list(CITY_DATA.keys()))
+            # ---------- DISPLAY ----------
+            st.subheader("📊 Latest Week Data (with lags/rolls)")
+            st.dataframe(input_df.T.rename(columns={0: "Value"}))
 
-if st.button("Run Prediction"):
-    st.info("Fetching weather data...")
-    weather_df = fetch_weather_data(city)
+            st.subheader("🔍 Predicted Dengue Risk Level")
+            if predicted == "Low":
+                st.success(f"🟢 {predicted}")
+            elif predicted == "Moderate":
+                st.info(f"🟡 {predicted}")
+            elif predicted == "High":
+                st.warning(f"🟠 {predicted}")
+            else:
+                st.error(f"🔴 {predicted}")
 
-    if weather_df is not None:
-        st.write("📅 7-Day Weather Forecast:")
-        st.dataframe(weather_df)
-
-        st.info("Preparing data and features...")
-        data_ready = prepare_data(weather_df, city)
-
-        model = load_model()
-        if model:
-            st.success("✅ Model loaded successfully.")
-            X = data_ready.select_dtypes(include=[np.number])
-
-            preds = model.predict(X)
-            data_ready["Predicted_Risk"] = preds
-
-            st.subheader("📊 Weekly Dengue Early Warning:")
-            st.dataframe(data_ready[["DATE", "CITY", "Predicted_Risk"]])
-
-            st.line_chart(data_ready.set_index("DATE")["Predicted_Risk"])
+        except Exception as e:
+            st.error(f"Failed: {e}")
