@@ -239,6 +239,30 @@ if st.button("Run Weekly Prediction"):
         st.subheader("📊 Weekly Dengue Risk Forecast")
         st.dataframe(df_ready[["YEAR_WEEK_numerical", "Predicted_Risk"]])
 
+        df_ready["YEAR_WEEK_numerical"] = df_ready["YEAR_WEEK_numerical"].astype(int)
+        df_ready["YEAR"] = df_ready["YEAR_WEEK_numerical"] // 100
+        df_ready["WEEK"] = df_ready["YEAR_WEEK_numerical"] % 100
+
+        # Derive month name based on the first day of the ISO week
+        df_ready["MONTH"] = df_ready.apply(
+            lambda x: pd.Timestamp.fromisocalendar(x["YEAR"], x["WEEK"], 1).strftime("%B"),
+            axis=1
+        )
+
+        # Reorder columns for clean display
+        display_cols = ["YEAR", "WEEK", "MONTH", "Predicted_Risk"]
+        st.dataframe(df_ready[display_cols])
+
+        # Optional: line chart with readable week labels
+        df_ready["WEEK_LABEL"] = df_ready.apply(
+            lambda x: f"W{x['WEEK']} ({x['MONTH'][:3]})", axis=1
+        )
+
+        st.line_chart(
+            df_ready.set_index("WEEK_LABEL")["Predicted_Risk"].astype("category").cat.codes
+        )
+
+        # Allow CSV download
         csv = df_ready.to_csv(index=False).encode("utf-8")
         st.download_button(
             "📥 Download Full Results as CSV",
