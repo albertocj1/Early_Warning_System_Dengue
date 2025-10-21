@@ -271,6 +271,38 @@ if st.button("Run Weekly Prediction"):
             mime="text/csv"
         )
 
+        st.subheader("🧭 Recommended LGU Actions per Risk Level")
+
+        lgu_guidelines = {
+            "Low": [
+                "Maintain routine vector surveillance and cleanup operations.",
+                "Continue health education and information campaigns in schools and communities.",
+                "Encourage households to eliminate standing water weekly."
+            ],
+            "Moderate": [
+                "Intensify monitoring of dengue symptoms in barangays.",
+                "Deploy barangay health workers for active case finding.",
+                "Strengthen larval surveillance and clean-up drives every weekend."
+            ],
+            "High": [
+                "Activate the local Dengue Task Force and prepare response logistics.",
+                "Conduct fogging operations in high-risk areas after case validation.",
+                "Issue public advisories through local radio, social media, and barangay announcements."
+            ],
+            "Very High": [
+                "Declare a local dengue alert status and mobilize emergency response units.",
+                "Coordinate with DOH and nearby hospitals for surge preparedness.",
+                "Implement 24-hour monitoring, community cleanup campaigns, and intensified vector control."
+            ]
+        }
+
+        # Display guidelines neatly
+        for level, actions in lgu_guidelines.items():
+            st.markdown(f"### 🦠 {level} Risk")
+            for action in actions:
+                st.markdown(f"- {action}")
+            st.markdown("---")
+
         st.line_chart(df_ready.set_index("YEAR_WEEK_numerical")["Predicted_Risk"].astype("category").cat.codes)
 
     except Exception as e:
