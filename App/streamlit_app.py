@@ -64,8 +64,8 @@ model_classification, scaler_classification = load_model_and_scaler()
 # ☀️ FETCH SUNSHINE DATA FROM METEOMATICS
 # -------------------------------------
 def fetch_sunshine_meteomatics(lat=14.6, lon=120.98, days=7):
-    username = "nationaluniversity-manila_alberto_christianjoshua"
-    password = "l1898PFZcsuDiKEMOhM0"
+    username = "nationaluniversity_gatchalian_marcelino"
+    password = "2mFXw42gCb243yF9l5sK"
 
     start_date = datetime.datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     end_date = start_date + datetime.timedelta(days=days - 1)
