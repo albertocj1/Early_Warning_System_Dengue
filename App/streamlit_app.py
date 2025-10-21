@@ -271,37 +271,51 @@ if st.button("Run Weekly Prediction"):
             mime="text/csv"
         )
 
-        st.subheader("🧭 Recommended LGU Actions per Risk Level")
+        st.subheader("🧭 LGU Response Recommendation")
 
-        lgu_guidelines = {
-            "Low": [
-                "Maintain routine vector surveillance and cleanup operations.",
-                "Continue health education and information campaigns in schools and communities.",
-                "Encourage households to eliminate standing water weekly."
-            ],
-            "Moderate": [
-                "Intensify monitoring of dengue symptoms in barangays.",
-                "Deploy barangay health workers for active case finding.",
-                "Strengthen larval surveillance and clean-up drives every weekend."
-            ],
-            "High": [
-                "Activate the local Dengue Task Force and prepare response logistics.",
-                "Conduct fogging operations in high-risk areas after case validation.",
-                "Issue public advisories through local radio, social media, and barangay announcements."
-            ],
-            "Very High": [
-                "Declare a local dengue alert status and mobilize emergency response units.",
-                "Coordinate with DOH and nearby hospitals for surge preparedness.",
-                "Implement 24-hour monitoring, community cleanup campaigns, and intensified vector control."
-            ]
-        }
+        # Determine the latest week's predicted risk (or dominant category)
+        latest_risk = df_ready.iloc[-1]["Predicted_Risk"]
 
-        # Display guidelines neatly
-        for level, actions in lgu_guidelines.items():
-            st.markdown(f"### 🦠 {level} Risk")
-            for action in actions:
-                st.markdown(f"- {action}")
-            st.markdown("---")
+        if latest_risk == "Low":
+            st.success("🟢 **LOW RISK** — Maintain standard preventive measures.")
+            st.markdown("""
+            **Recommended LGU Actions:**
+            - Continue regular vector surveillance and weekly clean-up operations.  
+            - Maintain information drives in schools and communities.  
+            - Encourage households to check and remove stagnant water weekly.  
+            """)
+
+        elif latest_risk == "Moderate":
+            st.info("🟡 **MODERATE RISK** — Strengthen monitoring and preventive actions.")
+            st.markdown("""
+            **Recommended LGU Actions:**
+            - Intensify barangay-level monitoring of suspected dengue cases.  
+            - Conduct weekly larval surveillance and cleanup drives.  
+            - Mobilize barangay health workers for symptom checks and awareness campaigns.  
+            """)
+
+        elif latest_risk == "High":
+            st.warning("🟠 **HIGH RISK** — Immediate LGU preparedness required.")
+            st.markdown("""
+            **Recommended LGU Actions:**
+            - Activate the local Dengue Task Force and prepare response logistics.  
+            - Conduct fogging operations in hotspot areas after case validation.  
+            - Issue local advisories via social media, radio, and barangay announcements.  
+            - Strengthen coordination with local hospitals and RHUs for early response.  
+            """)
+
+        elif latest_risk == "Very High":
+            st.error("🔴 **VERY HIGH RISK** — Immediate outbreak response recommended.")
+            st.markdown("""
+            **Recommended LGU Actions:**
+            - Declare a local dengue alert and mobilize emergency response units.  
+            - Coordinate with DOH and hospitals for surge capacity and medical supplies.  
+            - Implement 24-hour case monitoring and intensified fogging and cleanup drives.  
+            - Launch community-wide campaigns and activate rapid response teams.  
+            """)
+
+        else:
+            st.info("ℹ️ Risk level not classified. Please check the prediction results.")
 
         st.line_chart(df_ready.set_index("YEAR_WEEK_numerical")["Predicted_Risk"].astype("category").cat.codes)
 
