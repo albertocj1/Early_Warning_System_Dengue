@@ -12,7 +12,11 @@ from sklearn.exceptions import InconsistentVersionWarning
 # ⚙️ CONFIG
 # -------------------------------------
 warnings.filterwarnings("ignore", category=InconsistentVersionWarning)
-st.set_page_config(page_title="🦟 Dengue Weekly Early Warning System", page_icon="🦠", layout="wide")
+st.set_page_config(
+    page_title="🦟 Dengue Weekly Early Warning System",
+    page_icon="🦠",
+    layout="wide"
+)
 
 # -------------------------------------
 # 🔑 API KEYS
@@ -48,7 +52,6 @@ CITY_DATA = {
     "VALENZUELA CITY": {"lat": 14.7, "lon": 120.97, "land_area": 47.02, "pop_2015": 620422, "pop_2020": 714978},
 }
 
-
 # -------------------------------------
 # 🧠 LOAD MODEL + SCALER
 # -------------------------------------
@@ -61,78 +64,79 @@ def load_model_and_scaler():
 model_classification, scaler_classification = load_model_and_scaler()
 
 # -------------------------------------
-# ☀️ FETCH SUNSHINE DATA FROM METEOMATICS
+# ☀️ FETCH SUNSHINE FROM OPEN-METEO
 # -------------------------------------
-def fetch_sunshine_meteomatics(lat=14.6, lon=120.98, days=7):
-    username = "nationaluniversity_gatchalian_marcelino"
-    password = "2mFXw42gCb243yF9l5sK"
-
-    start_date = datetime.datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+def fetch_sunshine_open_meteo(lat, lon, days=7):
+    start_date = datetime.date.today()
     end_date = start_date + datetime.timedelta(days=days - 1)
-    start_str = start_date.strftime("%Y-%m-%dT%H:%M:%SZ")
-    end_str = end_date.strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    parameter = "sunshine_duration_24h:min"
-    url = f"https://api.meteomatics.com/{start_str}--{end_str}:P1D/{parameter}/{lat},{lon}/json"
+    url = (
+        "https://api.open-meteo.com/v1/forecast"
+        f"?latitude={lat}"
+        f"&longitude={lon}"
+        f"&daily=sunshine_duration"
+        f"&timezone=Asia/Manila"
+        f"&start_date={start_date}"
+        f"&end_date={end_date}"
+    )
 
-    r = requests.get(url, auth=(username, password), timeout=10)
+    r = requests.get(url, timeout=10)
     if r.status_code != 200:
-        raise RuntimeError(f"Meteomatics error {r.status_code}: {r.text}")
+        raise RuntimeError(f"Open-Meteo error {r.status_code}: {r.text}")
 
     data = r.json()
-    records = []
-    for item in data["data"][0]["coordinates"][0]["dates"]:
-        date = item["date"].split("T")[0]
-        minutes = item["value"]
-        hours = round(minutes / 60, 2)
-        records.append({"DATE": date, "SUNSHINE": hours})
-    return pd.DataFrame(records)
+    dates = data["daily"]["time"]
+    sunshine = data["daily"]["sunshine_duration"]
+
+    return pd.DataFrame({
+        "DATE": dates,
+        "SUNSHINE": [round(s / 3600, 2) if s else 0 for s in sunshine]
+    })
 
 # -------------------------------------
 # 🌦️ FETCH WEATHER FROM WEATHERAPI
 # -------------------------------------
-def fetch_weather_forecast(city: str, days: int = 7):
+def fetch_weather_forecast(city, days=7):
     url = f"http://api.weatherapi.com/v1/forecast.json?key={WEATHER_API_KEY}&q={city}&days={days}"
     r = requests.get(url, timeout=10)
     if r.status_code != 200:
         raise RuntimeError(f"WeatherAPI error {r.status_code}: {r.text}")
+
     data = r.json()
 
-    weather_records = []
-    for day in data["forecast"]["forecastday"]:
-        date = day["date"]
-        f = day["day"]
-        weather_records.append({
-            "DATE": date,
-            "RAINFALL": f["totalprecip_mm"],
-            "TMAX": f["maxtemp_c"],
-            "TMIN": f["mintemp_c"],
-            "TMEAN": f["avgtemp_c"],
-            "RH": f["avghumidity"],
-        })
+    weather_df = pd.DataFrame([
+        {
+            "DATE": d["date"],
+            "RAINFALL": d["day"]["totalprecip_mm"],
+            "TMAX": d["day"]["maxtemp_c"],
+            "TMIN": d["day"]["mintemp_c"],
+            "TMEAN": d["day"]["avgtemp_c"],
+            "RH": d["day"]["avghumidity"],
+        }
+        for d in data["forecast"]["forecastday"]
+    ])
 
-    weather_df = pd.DataFrame(weather_records)
-    city_info = CITY_DATA.get(city, {"lat": 14.6, "lon": 120.98})
-    sunshine_df = fetch_sunshine_meteomatics(city_info["lat"], city_info["lon"], days)
-    merged_df = pd.merge(weather_df, sunshine_df, on="DATE", how="left")
-    return merged_df
+    info = CITY_DATA[city]
+    sunshine_df = fetch_sunshine_open_meteo(info["lat"], info["lon"], days)
+
+    return pd.merge(weather_df, sunshine_df, on="DATE", how="left")
 
 # -------------------------------------
 # 📈 FEATURE ENGINEERING
 # -------------------------------------
 def add_lag_and_rolling(df):
     df = df.sort_values("DATE").reset_index(drop=True)
-    numeric_cols = ["RAINFALL", "TMAX", "TMIN", "TMEAN", "RH", "SUNSHINE"]
+    cols = ["RAINFALL", "TMAX", "TMIN", "TMEAN", "RH", "SUNSHINE"]
 
-    for col in numeric_cols:
-        for lag in range(1, 5):
-            df[f"{col}_lag{lag}"] = df[col].shift(lag)
+    for c in cols:
+        for l in range(1, 5):
+            df[f"{c}_lag{l}"] = df[c].shift(l)
 
-    for col in ["RAINFALL", "TMEAN", "RH"]:
-        df[f"{col}_roll2_mean"] = df[col].rolling(2).mean()
-        df[f"{col}_roll4_mean"] = df[col].rolling(4).mean()
-        df[f"{col}_roll2_sum"] = df[col].rolling(2).sum()
-        df[f"{col}_roll4_sum"] = df[col].rolling(4).sum()
+    for c in ["RAINFALL", "TMEAN", "RH"]:
+        df[f"{c}_roll2_mean"] = df[c].rolling(2).mean()
+        df[f"{c}_roll4_mean"] = df[c].rolling(4).mean()
+        df[f"{c}_roll2_sum"] = df[c].rolling(2).sum()
+        df[f"{c}_roll4_sum"] = df[c].rolling(4).sum()
 
     return df.dropna().reset_index(drop=True)
 
@@ -141,183 +145,68 @@ def add_lag_and_rolling(df):
 # -------------------------------------
 def project_population(city, target_year=2025):
     info = CITY_DATA[city]
-    p2015, p2020 = info["pop_2015"], info["pop_2020"]
-    growth_rate = (p2020 / p2015) ** (1 / 5) - 1
-    return int(p2020 * ((1 + growth_rate) ** (target_year - 2020)))
+    growth = (info["pop_2020"] / info["pop_2015"]) ** (1 / 5) - 1
+    return int(info["pop_2020"] * ((1 + growth) ** (target_year - 2020)))
 
 # -------------------------------------
-# 🧩 PREDICTION DATA PIPELINE
+# 🧩 PREPARE MODEL INPUT
 # -------------------------------------
 def prepare_data(df, city, recent_cases):
     pop = project_population(city)
     area = CITY_DATA[city]["land_area"]
 
-    df["CITY"] = city
-    df["LAND AREA"] = area
     df["POPULATION"] = pop
+    df["LAND AREA"] = area
     df["POP_DENSITY"] = pop / area
     df["YEAR_WEEK_numerical"] = df["DATE"].apply(
-        lambda x: int(pd.to_datetime(x).isocalendar().year * 100 + pd.to_datetime(x).isocalendar().week)
+        lambda x: int(pd.to_datetime(x).isocalendar().year * 100 +
+                      pd.to_datetime(x).isocalendar().week)
     )
 
     df = add_lag_and_rolling(df)
 
-    # --- Manual dengue case inputs ---
-    df["CASES_lag1"] = recent_cases[0]
-    df["CASES_lag2"] = recent_cases[1]
-    df["CASES_lag3"] = recent_cases[2]
-    df["CASES_lag4"] = recent_cases[3]
-
+    df["CASES_lag1"], df["CASES_lag2"], df["CASES_lag3"], df["CASES_lag4"] = recent_cases
     df["CASES_roll2_mean"] = np.mean(recent_cases[:2])
     df["CASES_roll4_mean"] = np.mean(recent_cases)
     df["CASES_roll2_sum"] = np.sum(recent_cases[:2])
     df["CASES_roll4_sum"] = np.sum(recent_cases)
 
-    feature_order = [
-        'RAINFALL', 'TMAX', 'TMIN', 'TMEAN', 'RH', 'SUNSHINE',
-        'POPULATION', 'LAND AREA', 'POP_DENSITY',
-        'CASES_lag1', 'CASES_lag2', 'CASES_lag3', 'CASES_lag4',
-        'RAINFALL_lag1', 'RAINFALL_lag2', 'RAINFALL_lag3', 'RAINFALL_lag4',
-        'TMAX_lag1', 'TMAX_lag2', 'TMAX_lag3', 'TMAX_lag4',
-        'TMIN_lag1', 'TMIN_lag2', 'TMIN_lag3', 'TMIN_lag4',
-        'TMEAN_lag1', 'TMEAN_lag2', 'TMEAN_lag3', 'TMEAN_lag4',
-        'RH_lag1', 'RH_lag2', 'RH_lag3', 'RH_lag4',
-        'SUNSHINE_lag1', 'SUNSHINE_lag2', 'SUNSHINE_lag3', 'SUNSHINE_lag4',
-        'CASES_roll2_mean', 'CASES_roll4_mean', 'CASES_roll2_sum', 'CASES_roll4_sum',
-        'RAINFALL_roll2_mean', 'RAINFALL_roll4_mean', 'RAINFALL_roll2_sum', 'RAINFALL_roll4_sum',
-        'TMEAN_roll2_mean', 'TMEAN_roll4_mean', 'TMEAN_roll2_sum', 'TMEAN_roll4_sum',
-        'RH_roll2_mean', 'RH_roll4_mean', 'RH_roll2_sum', 'RH_roll4_sum',
-        'YEAR_WEEK_numerical'
-    ]
-
-    # ✅ Ensure all required columns exist and in correct order
-    for col in feature_order:
-        if col not in df.columns:
-            df[col] = 0
-    df = df[feature_order]
-
-    return df
+    X = df.select_dtypes(include=[np.number]).replace([np.inf, -np.inf], 0).fillna(0)
+    X_scaled = scaler_classification.transform(X)
+    return df, X_scaled.reshape((X_scaled.shape[0], 1, X_scaled.shape[1]))
 
 # -------------------------------------
-# 🖥️ STREAMLIT APP
+# 🖥️ STREAMLIT UI
 # -------------------------------------
 st.title("🦠 Weekly Dengue Early Warning System")
-st.markdown("Predicts dengue risk using WeatherAPI + Meteomatics sunshine + lag & rolling features.")
 
 city = st.selectbox("🏙️ Select City", list(CITY_DATA.keys()))
 
-# --- Manual dengue case input section ---
 st.markdown("### 🧮 Enter Recent Weekly Dengue Cases")
-col1, col2, col3, col4 = st.columns(4)
-case_week1 = col1.number_input("Week -1 (Most Recent)", min_value=0, step=1, value=10)
-case_week2 = col2.number_input("Week -2", min_value=0, step=1, value=8)
-case_week3 = col3.number_input("Week -3", min_value=0, step=1, value=6)
-case_week4 = col4.number_input("Week -4", min_value=0, step=1, value=5)
-recent_cases = [case_week1, case_week2, case_week3, case_week4]
+cols = st.columns(4)
+recent_cases = [
+    cols[0].number_input("Week -1", min_value=0, value=10),
+    cols[1].number_input("Week -2", min_value=0, value=8),
+    cols[2].number_input("Week -3", min_value=0, value=6),
+    cols[3].number_input("Week -4", min_value=0, value=5),
+]
 
 if st.button("Run Weekly Prediction"):
-    try:
-        with st.spinner("Fetching weather and sunshine data..."):
-            weather_df = fetch_weather_forecast(city)
-        st.success("✅ Data fetched successfully!")
-        st.dataframe(weather_df)
+    with st.spinner("Fetching data..."):
+        weather_df = fetch_weather_forecast(city)
 
-        with st.spinner("Preparing model features..."):
-            df_ready = prepare_data(weather_df, city, recent_cases)
+    df_ready, X = prepare_data(weather_df, city, recent_cases)
+    preds = model_classification.predict(X)
 
-            # ✅ Align and scale safely
-            X = df_ready.select_dtypes(include=[np.number])
-            X = X.replace([np.inf, -np.inf], 0).fillna(0)
-            X_scaled = scaler_classification.transform(X)
-            X_scaled = X_scaled.reshape((X_scaled.shape[0], 1, X_scaled.shape[1]))
+    labels = ["Low", "Moderate", "High", "Very High"]
+    df_ready["Predicted_Risk"] = [labels[np.argmax(p)] for p in preds]
 
-        with st.spinner("Running model predictions..."):
-            preds = model_classification.predict(X_scaled)
-            labels = ["Low", "Moderate", "High", "Very High"]
-            df_ready["Predicted_Risk"] = [labels[np.argmax(p)] for p in preds]
+    st.subheader("📊 Dengue Risk Forecast")
+    st.dataframe(df_ready[["DATE", "Predicted_Risk"]])
 
-        st.subheader("📊 Weekly Dengue Risk Forecast")
-        st.dataframe(df_ready[["YEAR_WEEK_numerical", "Predicted_Risk"]])
-
-        df_ready["YEAR_WEEK_numerical"] = df_ready["YEAR_WEEK_numerical"].astype(int)
-        df_ready["YEAR"] = df_ready["YEAR_WEEK_numerical"] // 100
-        df_ready["WEEK"] = df_ready["YEAR_WEEK_numerical"] % 100
-
-        # Derive month name based on the first day of the ISO week
-        df_ready["MONTH"] = df_ready.apply(
-            lambda x: pd.Timestamp.fromisocalendar(x["YEAR"], x["WEEK"], 1).strftime("%B"),
-            axis=1
-        )
-
-        # Reorder columns for clean display
-        display_cols = ["YEAR", "WEEK", "MONTH", "Predicted_Risk"]
-        st.dataframe(df_ready[display_cols])
-
-        # Optional: line chart with readable week labels
-        df_ready["WEEK_LABEL"] = df_ready.apply(
-            lambda x: f"W{x['WEEK']} ({x['MONTH'][:3]})", axis=1
-        )
-
-        st.line_chart(
-            df_ready.set_index("WEEK_LABEL")["Predicted_Risk"].astype("category").cat.codes
-        )
-
-        # Allow CSV download
-        csv = df_ready.to_csv(index=False).encode("utf-8")
-        st.download_button(
-            "📥 Download Full Results as CSV",
-            data=csv,
-            file_name=f"{city}_dengue_forecast.csv",
-            mime="text/csv"
-        )
-
-        st.subheader("🧭 LGU Response Recommendation")
-
-        # Determine the latest week's predicted risk (or dominant category)
-        latest_risk = df_ready.iloc[-1]["Predicted_Risk"]
-
-        if latest_risk == "Low":
-            st.success("🟢 **LOW RISK** — Maintain standard preventive measures.")
-            st.markdown("""
-            **Recommended LGU Actions:**
-            - Continue regular vector surveillance and weekly clean-up operations.  
-            - Maintain information drives in schools and communities.  
-            - Encourage households to check and remove stagnant water weekly.  
-            """)
-
-        elif latest_risk == "Moderate":
-            st.info("🟡 **MODERATE RISK** — Strengthen monitoring and preventive actions.")
-            st.markdown("""
-            **Recommended LGU Actions:**
-            - Intensify barangay-level monitoring of suspected dengue cases.  
-            - Conduct weekly larval surveillance and cleanup drives.  
-            - Mobilize barangay health workers for symptom checks and awareness campaigns.  
-            """)
-
-        elif latest_risk == "High":
-            st.warning("🟠 **HIGH RISK** — Immediate LGU preparedness required.")
-            st.markdown("""
-            **Recommended LGU Actions:**
-            - Activate the local Dengue Task Force and prepare response logistics.  
-            - Conduct fogging operations in hotspot areas after case validation.  
-            - Issue local advisories via social media, radio, and barangay announcements.  
-            - Strengthen coordination with local hospitals and RHUs for early response.  
-            """)
-
-        elif latest_risk == "Very High":
-            st.error("🔴 **VERY HIGH RISK** — Immediate outbreak response recommended.")
-            st.markdown("""
-            **Recommended LGU Actions:**
-            - Declare a local dengue alert and mobilize emergency response units.  
-            - Coordinate with DOH and hospitals for surge capacity and medical supplies.  
-            - Implement 24-hour case monitoring and intensified fogging and cleanup drives.  
-            - Launch community-wide campaigns and activate rapid response teams.  
-            """)
-
-        else:
-            st.info("ℹ️ Risk level not classified. Please check the prediction results.")
-
-        st.line_chart(df_ready.set_index("YEAR_WEEK_numerical")["Predicted_Risk"].astype("category").cat.codes)
-
-    except Exception as e:
-        st.error(f"❌ Error: {e}")
+    st.download_button(
+        "📥 Download CSV",
+        df_ready.to_csv(index=False),
+        f"{city}_dengue_forecast.csv",
+        "text/csv"
+    )
